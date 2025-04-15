@@ -1,0 +1,14 @@
+.env
+node_modules/
+
+# Private crypto key
+backend/private.pem
+
+# Additional recommended ignores
+.DS_Store
+*.log
+*.pem
+*.crt
+*.key
+__pycache__/
+*.pyc
