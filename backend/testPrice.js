@@ -1,39 +1,40 @@
+// Load environment variables
 require("dotenv").config();
 const axios = require("axios");
 
-const BASE_URL = "https://trading.robinhood.com/api/v1/crypto/trading/";
+// Define the endpoint you found working
+const BASE_URL = "https://api.robinhood.com/marketdata/forex/quotes/";
+
+// Setup API Key Header
 const HEADERS = {
   Authorization: `Bearer ${process.env.ROBINHOOD_API_KEY}`,
   "Content-Type": "application/json",
 };
 
-async function listCryptoPairs() {
-  try {
-    const res = await axios.get(`${BASE_URL}pairs/`, { headers: HEADERS });
+// Define the asset you want (ex: BTCUSD)
+const symbol = "BTCUSD";
 
-    const pairs = res.data.results || [];
-    console.log("✅ Available Crypto Trading Pairs:");
-    pairs.forEach((p) => {
-      console.log(`${p.display_symbol} — ID: ${p.id}`);
+async function getCryptoQuote() {
+  try {
+    const response = await axios.get(`${BASE_URL}${symbol}/`, {
+      headers: HEADERS,
     });
 
-    // If you want to auto-fetch BTC-USD specifically
-    const btcusd = pairs.find((p) => p.display_symbol === "BTC/USD");
-    if (btcusd) {
-      console.log("\nFetching quote for BTC/USD...");
-      const quoteRes = await axios.get(`${BASE_URL}quotes/${btcusd.id}/`, {
-        headers: HEADERS,
-      });
-      console.log("BTC/USD Quote:");
-      console.log(`Mark Price: $${quoteRes.data.mark_price}`);
-      console.log(`Ask Price: $${quoteRes.data.ask_price}`);
-      console.log(`Bid Price: $${quoteRes.data.bid_price}`);
-    } else {
-      console.error("BTC/USD not found in pairs list!");
-    }
-  } catch (err) {
-    console.error("❌ Error:", err.response?.status || err.code, err.message);
+    // Success! Display important fields
+    const quote = response.data;
+    console.log("✅ Crypto Quote Fetched Successfully:");
+    console.log(`- Symbol: ${symbol}`);
+    console.log(`- Mark Price: ${quote.mark_price}`);
+    console.log(`- Ask Price: ${quote.ask_price}`);
+    console.log(`- Bid Price: ${quote.bid_price}`);
+  } catch (error) {
+    console.error(
+      "❌ Error fetching quote:",
+      error.response?.status || error.code,
+      error.message
+    );
   }
 }
 
-listCryptoPairs();
+// Run it
+getCryptoQuote();

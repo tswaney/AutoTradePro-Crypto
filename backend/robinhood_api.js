@@ -21,10 +21,13 @@ const HEADERS = {
 
 // 🔍 Get the current price for a given symbol (e.g., BTCUSD)
 async function getPrice(symbol) {
-  const res = await axios.get(`${BASE_URL}quotes/${symbol}/`, {
-    headers: HEADERS,
-  });
-  return parseFloat(res.data.mark_price);
+  const res = await axios.get(
+    `https://api.robinhood.com/marketdata/forex/quotes/${symbol}/`,
+    {
+      headers: { Authorization: `Bearer ${process.env.ROBINHOOD_API_KEY}` },
+    }
+  );
+  return parseFloat(res.data.mark_price); // Use "bid_price" or "ask_price" if preferred
 }
 
 // ⚠️ Place a real trade (live trading) — requires approved API key
