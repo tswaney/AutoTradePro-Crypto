@@ -3,65 +3,69 @@ require("dotenv").config();
 const axios = require("axios");
 
 // ==============================================
+// Configuration
+// ==============================================
+const config = {
+  symbol: process.env.CRYPTO_SYMBOL || "BTCUSD",
+  aiEnabled: process.env.AI_ENABLED === "true",
+  demoMode: true,
+  initialBalance: 1000,
+  maxTradePercent: 0.5,
+  profitLockPercent: 0.2,
+  minTradeAmount: 0.01,
+  cashReservePercent: 0.15,
+  baseBuyThreshold: -0.1,
+  baseSellThreshold: 0.3,
+  checkInterval: 30000,
+  priceDecimalPlaces: 8,
+  maxDailyTrades: 50,
+  stopLossPercent: -0.3,
+};
+
+// ==============================================
 // API Configuration (PowerShell-style)
 // ==============================================
 const BASE_URL = "https://api.robinhood.com/marketdata/forex/quotes/";
 const HEADERS = {
   Authorization: `Bearer ${process.env.ROBINHOOD_API_KEY}`,
   "Content-Type": "application/json",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell/7.2.0", // Critical for API access
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell/7.2.0",
   Accept: "application/json",
   Origin: "https://robinhood.com",
 };
 
 // ==============================================
-// Trading Configuration (Moderate-Moderate Retain)
-// ==============================================
-const config = {
-  symbol: "BONKUSD",
-  demoMode: true,
-  initialBalance: 1000, // Starting cash ($1000)
-  maxTradePercent: 0.5, // 50% of cash reserve cap
-  profitLockPercent: 0.2, // 20% of profits locked
-  minTradeAmount: 0.01, // $0.01 minimum trade
-  cashReservePercent: 0.15, // 15% cash reserve
-  buyThreshold: -1.5, // 1.5x ATR buy trigger
-  sellThreshold: 1.5, // 1.5x ATR sell trigger
-  checkInterval: 30000, // 30 second intervals
-  priceDecimalPlaces: 8, // 8 decimals for micro-prices
-};
-
-// ==============================================
-// Portfolio Tracker (Strategy Implementation)
+// Portfolio Tracker
 // ==============================================
 let portfolio = {
-  cashReserve: config.initialBalance * (1 - config.cashReservePercent), // 85% of initial
-  lockedCash: 0, // Locked profits
-  crypto: 0, // BONK holdings
-  lastPrice: null, // Last traded price
-  trades: [], // Trade history
-  atr: 0.0000025, // Average True Range for BONKUSD
-  dailyTradeCount: 0, // Daily trade counter
-  startingValue: config.initialBalance, // Track initial portfolio value
+  cashReserve: config.initialBalance * (1 - config.cashReservePercent),
+  lockedCash: 0,
+  crypto: 0,
+  lastPrice: null,
+  trades: [],
+  atr: 0.0000025,
+  dailyTradeCount: 0,
+  startingValue: config.initialBalance,
+  lastStopLossCheck: null,
 };
 
 // ==============================================
-// Core Functions
+// Core Functions (Fixed Price Handling)
 // ==============================================
 
 /**
- * Formats micro-prices with proper decimal handling
- * @param {number} price - Raw price
- * @returns {string} Formatted price string
+ * Safely formats price with proper decimals
  */
 function formatPrice(price) {
-  const formatted = price.toFixed(config.priceDecimalPlaces);
-  return formatted.replace(/(\..*?)0+$/, "$1").replace(/\.$/, ""); // Trim trailing zeros
+  if (typeof price !== "number" || isNaN(price)) {
+    console.error("Invalid price value:", price);
+    return "0.00000000";
+  }
+  return price.toFixed(config.priceDecimalPlaces).replace(/\.?0+$/, "");
 }
 
 /**
- * Gets current price using PowerShell-style connection
- * @returns {Promise<number|null>} Current price or null if failed
+ * Robust price fetcher with error handling
  */
 async function getPrice() {
   try {
@@ -70,118 +74,103 @@ async function getPrice() {
       timeout: 10000,
     });
 
-    const price = Number(response.data?.mark_price);
-    if (isNaN(price) || price <= 0) throw new Error("Invalid price data");
+    // Validate response structure
+    if (!response.data || typeof response.data.mark_price === "undefined") {
+      throw new Error("Invalid API response structure");
+    }
+
+    const price = parseFloat(response.data.mark_price);
+    if (isNaN(price)) {
+      throw new Error("Price is not a number");
+    }
 
     console.log(`✅ ${config.symbol} Price: $${formatPrice(price)}`);
     return price;
   } catch (error) {
-    console.error(`❌ Price fetch failed:`, {
-      status: error.response?.status,
-      message: error.message,
-    });
+    console.error(`❌ Price fetch failed: ${error.message}`);
     return null;
   }
 }
 
 /**
- * Calculates current portfolio value
- * @param {number} currentPrice - Current BONK price
- * @returns {object} Portfolio value breakdown
- */
-function getPortfolioValue(currentPrice) {
-  const cryptoValue = portfolio.crypto * currentPrice;
-  const totalValue = portfolio.cashReserve + portfolio.lockedCash + cryptoValue;
-  const valueChange = totalValue - portfolio.startingValue;
-  const changePercent = (valueChange / portfolio.startingValue) * 100;
-
-  return {
-    total: totalValue,
-    crypto: cryptoValue,
-    change: valueChange,
-    changePercent: changePercent,
-  };
-}
-
-/**
- * Executes trades with full strategy compliance
- * @param {string} action - 'buy' or 'sell'
- * @param {number} price - Execution price
- * @param {number} priceChange - Percentage price change
+ * Executes trade with safety checks
  */
 function executeTrade(action, price, priceChange) {
-  try {
-    // Calculate trade size (capped at 50% of cash reserve, min $0.01)
-    const maxTradeAmount = portfolio.cashReserve * config.maxTradePercent;
-    const amountUSD = Math.min(
-      maxTradeAmount,
-      Math.max(config.minTradeAmount, maxTradeAmount * 0.75) // $75-$100 equivalent
-    );
-    const amount = amountUSD / price;
-
-    // Get pre-trade values for comparison
-    const preTradeValue = getPortfolioValue(price);
-
-    // Execute trade
-    if (action === "buy") {
-      portfolio.cashReserve -= amountUSD;
-      portfolio.crypto += amount;
-    } else {
-      const profit = amount * price - amount * portfolio.lastPrice;
-      portfolio.lockedCash += profit * config.profitLockPercent;
-      portfolio.cashReserve +=
-        amountUSD + profit * (1 - config.profitLockPercent);
-      portfolio.crypto -= amount;
-    }
-
-    // Record trade
-    const postTradeValue = getPortfolioValue(price);
-    const trade = {
-      action,
-      price,
-      amount,
-      amountUSD,
-      priceChange,
-      timestamp: new Date(),
-      portfolioValue: postTradeValue.total,
-      cryptoValue: postTradeValue.crypto,
-      valueChange: postTradeValue.change,
-      valueChangePercent: postTradeValue.changePercent,
-    };
-    portfolio.trades.push(trade);
-    portfolio.dailyTradeCount++;
-
-    // Display trade execution
-    console.log(`
-    ${"=".repeat(60)}
-    [${
-      config.demoMode ? "DEMO" : "LIVE"
-    }] ${action.toUpperCase()} ${amount.toFixed(0)} ${config.symbol}
-    @ $${formatPrice(price)} ($${amountUSD.toFixed(2)})
-    Δ ${priceChange.toFixed(2)}%
-    ${"-".repeat(40)}
-    Portfolio Impact:
-    ├─ BONK Qty: ${portfolio.crypto.toFixed(0)}
-    ├─ BONK USD Value: $${postTradeValue.crypto.toFixed(2)}
-    ├─ Total Value: $${postTradeValue.total.toFixed(2)}
-    └─ P/L: ${
-      postTradeValue.change >= 0 ? "+" : ""
-    }${postTradeValue.change.toFixed(
-      2
-    )} (${postTradeValue.changePercent.toFixed(2)}%)
-    ${"=".repeat(60)}`);
-  } catch (error) {
-    console.error(`❌ Trade execution failed:`, error.message);
+  // Convert price to number if it isn't already
+  price = typeof price === "number" ? price : parseFloat(price);
+  if (isNaN(price)) {
+    console.error("Invalid price in executeTrade");
+    return;
   }
+
+  // Calculate trade size (safety-constrained)
+  const maxTradeAmount = portfolio.cashReserve * config.maxTradePercent;
+  const amountUSD = Math.min(
+    maxTradeAmount,
+    Math.max(config.minTradeAmount, maxTradeAmount * 0.75)
+  );
+  const amount = amountUSD / price;
+
+  // Validate trade
+  if (amount <= 0 || (action === "sell" && portfolio.crypto <= 0)) {
+    console.log(
+      `⚠️ No ${action}: Insufficient ${action === "buy" ? "cash" : "crypto"}`
+    );
+    return;
+  }
+
+  // Execute trade
+  if (action === "buy") {
+    portfolio.cashReserve -= amountUSD;
+    portfolio.crypto += amount;
+  } else {
+    const profit = amount * price - amount * portfolio.lastPrice;
+    portfolio.lockedCash += profit * config.profitLockPercent;
+    portfolio.cashReserve +=
+      amountUSD + profit * (1 - config.profitLockPercent);
+    portfolio.crypto -= amount;
+  }
+
+  // Record trade
+  const trade = {
+    action,
+    price,
+    amount,
+    amountUSD,
+    priceChange,
+    timestamp: new Date(),
+  };
+  portfolio.trades.push(trade);
+  portfolio.dailyTradeCount++;
+  portfolio.lastPrice = price;
+
+  // Display trade
+  console.log(`
+  ${"=".repeat(50)}
+  [${
+    config.demoMode ? "DEMO" : "LIVE"
+  }] ${action.toUpperCase()} ${amount.toFixed(0)} ${config.symbol}
+  @ $${formatPrice(price)} ($${amountUSD.toFixed(2)})
+  Δ ${priceChange.toFixed(2)}%
+  ${"-".repeat(20)}
+  Portfolio Snapshot:
+  ├─ Cash Reserve: $${portfolio.cashReserve.toFixed(2)}
+  ├─ Locked Profit: $${portfolio.lockedCash.toFixed(2)}
+  ├─ ${config.symbol.replace("USD", "")} Holdings: ${portfolio.crypto.toFixed(
+    0
+  )}
+  └─ ${config.symbol.replace("USD", "")} Value: $${(
+    portfolio.crypto * price
+  ).toFixed(2)}
+  ${"=".repeat(50)}`);
 }
 
-/**
- * Runs trading strategy with ATR-based thresholds
- */
+// ==============================================
+// Strategy Execution
+// ==============================================
 async function runStrategy() {
-  // Check daily trade limit
-  if (portfolio.dailyTradeCount >= 50) {
-    console.log("⚠️ Daily trade limit reached (50 trades)");
+  if (portfolio.dailyTradeCount >= config.maxDailyTrades) {
+    console.log("⚠️ Daily trade limit reached");
     return;
   }
 
@@ -194,25 +183,14 @@ async function runStrategy() {
     return;
   }
 
-  // Calculate price movement
   const priceChange =
     ((price - portfolio.lastPrice) / portfolio.lastPrice) * 100;
-  console.log(
-    `📈 Price Change: ${priceChange.toFixed(2)}% (ATR: ${formatPrice(
-      portfolio.atr
-    )})`
-  );
+  console.log(`📈 Price Change: ${priceChange.toFixed(2)}%`);
 
-  // Strategy execution
-  if (
-    priceChange <= config.buyThreshold * portfolio.atr &&
-    portfolio.cashReserve > config.minTradeAmount
-  ) {
+  // Strategy rules
+  if (priceChange <= config.buyThreshold * portfolio.atr) {
     executeTrade("buy", price, priceChange);
-  } else if (
-    priceChange >= config.sellThreshold * portfolio.atr &&
-    portfolio.crypto > 0
-  ) {
+  } else if (priceChange >= config.sellThreshold * portfolio.atr) {
     executeTrade("sell", price, priceChange);
   }
 
@@ -220,88 +198,45 @@ async function runStrategy() {
 }
 
 // ==============================================
-// Execution
+// Initialization
 // ==============================================
 console.log(`
 ${"*".repeat(60)}
-🚀 Starting ${config.symbol} Trading (PowerShell Connection)
+🚀 Safety-First Crypto Trading Bot
 ${"-".repeat(60)}
-│ Initial Balance: $${config.initialBalance.toFixed(2)}
-│ Cash Reserve: $${portfolio.cashReserve.toFixed(2)} (${
-  (1 - config.cashReservePercent) * 100
-}%)
+│ Symbol: ${config.symbol}
+│ Mode: ${config.demoMode ? "DEMO" : "LIVE"}
+│ AI Optimization: ${config.aiEnabled ? "ENABLED" : "DISABLED"}
+${"-".repeat(60)}
 │ Trade Settings:
-│ ├─ Max Trade: $${(portfolio.cashReserve * config.maxTradePercent).toFixed(
-  2
-)} (${config.maxTradePercent * 100}%)
+│ ├─ Max Risk: ${config.maxTradePercent * 100}% per trade
 │ ├─ Profit Lock: ${config.profitLockPercent * 100}%
-│ └─ Min Trade: $${config.minTradeAmount.toFixed(2)}
+│ ├─ Cash Reserve: ${config.cashReservePercent * 100}%
+│ ├─ Stop Loss: ${config.stopLossPercent * 100}%
+│ └─ Max Trades/Day: ${config.maxDailyTrades}
 ${"*".repeat(60)}`);
 
-// Initial run
+// Start trading
 runStrategy();
-
-// Periodic execution
 const interval = setInterval(runStrategy, config.checkInterval);
 
-// ==============================================
-// Enhanced Shutdown Handler
-// ==============================================
+// Clean shutdown
 process.on("SIGINT", () => {
   clearInterval(interval);
-
-  const finalValue = getPortfolioValue(portfolio.lastPrice || 0);
-  const totalTrades = portfolio.trades.length;
+  const finalValue =
+    portfolio.cashReserve +
+    portfolio.lockedCash +
+    portfolio.crypto * (portfolio.lastPrice || 0);
 
   console.log(`
   ${"*".repeat(60)}
-  💼 FINAL PORTFOLIO SUMMARY
+  💼 Final Summary
   ${"-".repeat(60)}
-  │ Total Trades: ${totalTrades}
-  │ Cash Reserve: $${portfolio.cashReserve.toFixed(2)}
-  │ Locked Profit: $${portfolio.lockedCash.toFixed(2)}
-  │ ${config.symbol.replace("USD", "")} Holdings: ${portfolio.crypto.toFixed(0)}
-  │ ${config.symbol.replace("USD", "")} Value: $${finalValue.crypto.toFixed(2)}
-  │ Total Value: $${finalValue.total.toFixed(2)}
-  │ P/L: ${finalValue.change >= 0 ? "+" : ""}${finalValue.change.toFixed(
-    2
-  )} (${finalValue.changePercent.toFixed(2)}%)
-  ${"-".repeat(60)}`);
-
-  // Trade History
-  console.log(`
-  ${"*".repeat(60)}
-  📜 TRADE HISTORY (${totalTrades} Executed)
+  │ Total Trades: ${portfolio.trades.length}
+  │ Ending Value: $${finalValue.toFixed(2)}
+  │ P/L: ${finalValue >= config.initialBalance ? "+" : ""}$${(
+    finalValue - config.initialBalance
+  ).toFixed(2)}
   ${"*".repeat(60)}`);
-
-  if (totalTrades > 0) {
-    portfolio.trades.forEach((trade, i) => {
-      console.log(`
-      ${"-".repeat(50)}
-      Trade #${i + 1} - ${trade.timestamp.toLocaleString()}
-      [${trade.action.toUpperCase()}] ${trade.amount.toFixed(0)} ${
-        config.symbol
-      }
-      @ $${formatPrice(trade.price)} ($${trade.amountUSD.toFixed(2)})
-      Δ ${trade.priceChange.toFixed(2)}%
-      ${"-".repeat(20)}
-      Portfolio Snapshot:
-      ├─ BONK Qty: ${portfolio.crypto.toFixed(0)}
-      ├─ BONK Value: $${trade.cryptoValue.toFixed(2)}
-      ├─ Total Value: $${trade.portfolioValue.toFixed(2)}
-      └─ P/L: ${trade.valueChange >= 0 ? "+" : ""}${trade.valueChange.toFixed(
-        2
-      )} (${trade.valueChangePercent.toFixed(2)}%)
-      ${"-".repeat(50)}`);
-    });
-  } else {
-    console.log("\n      No trades executed this session");
-  }
-
-  console.log(`
-  ${"*".repeat(60)}
-  🏁 Session Ended - ${totalTrades} Trades Executed
-  ${"*".repeat(60)}`);
-
   process.exit(0);
 });
