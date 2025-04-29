@@ -2,150 +2,178 @@
 require("dotenv").config();
 const axios = require("axios");
 
-// API Configuration
+// API Configuration (PowerShell-style that worked previously)
 const BASE_URL = "https://api.robinhood.com/marketdata/forex/quotes/";
-const symbol = "BONKUSD"; // Crypto symbol to track
-
-// Request Headers
 const HEADERS = {
   Authorization: `Bearer ${process.env.ROBINHOOD_API_KEY}`,
   "Content-Type": "application/json",
-  "User-Agent": "Node.js Crypto Tracker/1.0",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell/7.2.0", // Critical for API compatibility
   Accept: "application/json",
 };
 
-// Demo Trading Configuration
-const DEMO_MODE = true; // Set to false for live trading
-const INITIAL_BALANCE = 1000; // Starting balance in USD
-const TRADE_AMOUNT = 0.01; // Amount of crypto to trade per transaction
+// Trading Configuration
+const config = {
+  symbol: "BONKUSD", // Start with BTCUSD to verify connection
+  demoMode: true, // Hardcoded safety - no real trades
+  initialBalance: 1000, // Starting USD balance
+  tradeAmount: 0.001, // BTC amount per trade
+  buyThreshold: -1.5, // Buy if price drops 1.5%
+  sellThreshold: 3, // Sell if price rises 3%
+  checkInterval: 30000, // 30 seconds (avoid rate limits)
+  priceDecimalPlaces: 8, // For proper crypto price display
+};
 
-// Track demo portfolio state
-let demoPortfolio = {
-  usdBalance: INITIAL_BALANCE,
-  cryptoAmount: 0,
-  lastTradePrice: null,
+// Portfolio Tracker
+let portfolio = {
+  usd: config.initialBalance,
+  crypto: 0,
+  lastPrice: null,
   trades: [],
 };
 
 /**
- * Simulates a trade in demo mode
- * @param {string} action - 'buy' or 'sell'
- * @param {number} price - Current market price
+ * Safely fetches current price with type validation
+ * @returns {Promise<number|null>} Current price or null if failed
  */
-function simulateTrade(action, price) {
+async function getPrice() {
   try {
-    const amount = action === "buy" ? TRADE_AMOUNT : demoPortfolio.cryptoAmount;
-    const cost = amount * price;
+    const response = await axios.get(`${BASE_URL}${config.symbol}/`, {
+      headers: HEADERS,
+      timeout: 8000,
+    });
 
-    if (action === "buy" && demoPortfolio.usdBalance >= cost) {
-      demoPortfolio.usdBalance -= cost;
-      demoPortfolio.cryptoAmount += amount;
-      demoPortfolio.lastTradePrice = price;
-      logTrade(action, price, amount);
-    } else if (action === "sell" && demoPortfolio.cryptoAmount >= amount) {
-      demoPortfolio.usdBalance += cost;
-      demoPortfolio.cryptoAmount -= amount;
-      demoPortfolio.lastTradePrice = price;
-      logTrade(action, price, amount);
+    // Debug: Uncomment to see full API response structure
+    // console.log("API Response:", response.data);
+
+    // Fixed: Proper parentheses and type checking
+    const price = Number(response.data?.mark_price);
+    if (isNaN(price)) {
+      throw new Error(`Invalid price format: ${response.data?.mark_price}`);
     }
+
+    return price;
   } catch (error) {
-    console.error("❌ Trade simulation failed:", error.message);
+    console.error(`❌ Price fetch failed:`, error.message);
+    return null;
   }
 }
 
 /**
- * Logs trade details to console and portfolio history
+ * Simulates a trade in demo mode with balance checks
+ * @param {string} action - 'buy' or 'sell'
+ * @param {number} price - Validated current price
  */
-function logTrade(action, price, amount) {
-  const trade = {
-    action,
-    price,
-    amount,
-    timestamp: new Date().toISOString(),
-    portfolioValue:
-      demoPortfolio.usdBalance + demoPortfolio.cryptoAmount * price,
-  };
+function executeTrade(action, price) {
+  try {
+    // Calculate trade amount with safety checks
+    const amount =
+      action === "buy"
+        ? Math.min(config.tradeAmount, portfolio.usd / price) // Never overspend
+        : Math.min(portfolio.crypto, config.tradeAmount); // Never oversell
 
-  demoPortfolio.trades.push(trade);
-  console.log(
-    `[DEMO] ${action.toUpperCase()} ${amount} ${symbol} @ $${price.toFixed(
-      8
-    )} | ` +
-      `USD: $${demoPortfolio.usdBalance.toFixed(2)} | ` +
-      `${symbol}: ${demoPortfolio.cryptoAmount.toFixed(8)}`
-  );
+    // Validate trade viability
+    if (amount <= 0) {
+      console.log(
+        `⚠️ Skipped ${action}: Insufficient ${action === "buy" ? "USD" : "BTC"}`
+      );
+      return;
+    }
+
+    // Update portfolio
+    if (action === "buy") {
+      portfolio.usd -= amount * price;
+      portfolio.crypto += amount;
+    } else {
+      portfolio.usd += amount * price;
+      portfolio.crypto -= amount;
+    }
+
+    portfolio.lastPrice = price;
+    portfolio.trades.push({
+      action,
+      price,
+      amount,
+      timestamp: new Date(),
+      portfolioValue: portfolio.usd + portfolio.crypto * price,
+    });
+
+    console.log(
+      `[${
+        config.demoMode ? "DEMO" : "LIVE"
+      }] ${action.toUpperCase()} ${amount.toFixed(6)} ${config.symbol}`,
+      `@ $${price.toFixed(config.priceDecimalPlaces)}`,
+      `| USD: $${portfolio.usd.toFixed(2)}`,
+      `| ${config.symbol.replace("USD", "")}: ${portfolio.crypto.toFixed(6)}`
+    );
+  } catch (error) {
+    console.error(`❌ Trade simulation failed:`, error.message);
+  }
 }
 
 /**
- * Implements basic trading strategy
+ * Runs trading strategy with price validation
  */
-function runStrategy(currentPrice) {
-  if (!demoPortfolio.lastTradePrice) {
-    demoPortfolio.lastTradePrice = currentPrice;
+async function runStrategy() {
+  const price = await getPrice();
+
+  // Skip if price fetch failed
+  if (price === null || typeof price !== "number") {
+    console.log("⏭️ Skipping strategy due to invalid price");
     return;
   }
 
-  const priceChangePercent =
-    ((currentPrice - demoPortfolio.lastTradePrice) /
-      demoPortfolio.lastTradePrice) *
-    100;
+  console.log(
+    `\n📊 ${config.symbol}: $${price.toFixed(config.priceDecimalPlaces)}`
+  );
 
-  // Example strategy: Buy on 2% drop, sell on 5% rise
-  if (priceChangePercent <= -2) simulateTrade("buy", currentPrice);
-  if (priceChangePercent >= 5 && demoPortfolio.cryptoAmount > 0) {
-    simulateTrade("sell", currentPrice);
+  // Initialize on first run
+  if (portfolio.lastPrice === null) {
+    portfolio.lastPrice = price;
+    return;
+  }
+
+  // Calculate price change percentage
+  const priceChange =
+    ((price - portfolio.lastPrice) / portfolio.lastPrice) * 100;
+  console.log(`Price Change: ${priceChange.toFixed(2)}%`);
+
+  // Strategy execution
+  if (priceChange <= config.buyThreshold) {
+    executeTrade("buy", price);
+  } else if (priceChange >= config.sellThreshold && portfolio.crypto > 0) {
+    executeTrade("sell", price);
   }
 }
 
-/**
- * Fetches current market price and executes strategy
- */
-async function getCryptoQuote() {
-  try {
-    // Add timeout and retry configuration
-    const response = await axios.get(`${BASE_URL}${symbol}/`, {
-      headers: HEADERS,
-      timeout: 5000, // 5 second timeout
-    });
+// Initialize
+console.log(`🚀 Starting ${config.demoMode ? "DEMO" : "LIVE"} Trading`);
+console.log(`- Symbol: ${config.symbol}`);
+console.log(`- Initial USD: $${portfolio.usd.toFixed(2)}`);
+console.log(
+  `- Strategy: Buy ${config.buyThreshold}% ↓ | Sell ${config.sellThreshold}% ↑`
+);
+console.log(`- Interval: ${config.checkInterval / 1000} seconds\n`);
 
-    const quote = response.data;
-    console.log(`\n✅ ${symbol} Price: $${quote.mark_price}`);
+// Immediate first run
+runStrategy();
 
-    if (DEMO_MODE) {
-      runStrategy(quote.mark_price);
-    }
-  } catch (error) {
-    // Enhanced error handling
-    if (error.code === "ECONNABORTED") {
-      console.warn("⚠️ Request timeout - retrying...");
-    } else if (error.response) {
-      // API error response
-      console.error(
-        `❌ API Error (${error.response.status}):`,
-        error.response.data?.message || "No error details"
-      );
-    } else if (error.request) {
-      // No response received
-      console.error("❌ Network Error:", error.message);
-    } else {
-      // Other errors
-      console.error("❌ Unexpected Error:", error.message);
-    }
-  }
-}
-
-// Initialize and run every 30 seconds
-console.log(`Starting ${symbol} price tracker (Demo Mode: ${DEMO_MODE})`);
-getCryptoQuote(); // Immediate first run
-const interval = setInterval(getCryptoQuote, 30 * 1000); // 30 second interval
-//const interval = setInterval(getCryptoQuote, 5 * 60 * 1000); // 5 minutes interval
-
-// Cleanup on exit
+// Periodic execution with cleanup
+const interval = setInterval(runStrategy, config.checkInterval);
 process.on("SIGINT", () => {
   clearInterval(interval);
-  console.log("\n📊 Final Portfolio Summary:");
-  console.log(`- USD Balance: $${demoPortfolio.usdBalance.toFixed(2)}`);
-  console.log(`- ${symbol} Holdings: ${demoPortfolio.cryptoAmount.toFixed(8)}`);
-  console.log(`- Total Trades: ${demoPortfolio.trades.length}`);
+  console.log("\n💼 Final Portfolio Summary:");
+  console.log(`- USD Balance: $${portfolio.usd.toFixed(2)}`);
+  console.log(
+    `- ${config.symbol.replace("USD", "")} Holdings: ${portfolio.crypto.toFixed(
+      6
+    )}`
+  );
+  console.log(
+    `- Current Value: $${(
+      portfolio.usd +
+      portfolio.crypto * (portfolio.lastPrice || 0)
+    ).toFixed(2)}`
+  );
+  console.log(`- Total Trades: ${portfolio.trades.length}`);
   process.exit(0);
 });
