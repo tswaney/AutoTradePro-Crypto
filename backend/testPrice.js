@@ -211,8 +211,30 @@ async function promptStrategySelection() {
   for (const symbol in portfolio.cryptos) {
     strategies[symbol] = initializeStrategy(symbol);
   }
-  console.log(`\n🚀 ${config.strategy}`);
-  console.log(`Symbol(s): ${Object.keys(portfolio.cryptos).join(", ")}`);
+
+  // ✅ Initial Startup Summary
+  console.log("\n************************************************************");
+  console.log(`🚀 AutoTradePro Crypto - ${config.strategy}`);
+  console.log("------------------------------------------------------------");
+  console.log(`│ Symbol(s): ${Object.keys(portfolio.cryptos).join(", ")}`);
+  console.log(`│ Mode: ${config.demoMode ? "DEMO" : "LIVE"}`);
+  console.log(
+    `│ AI Optimization: ${config.aiEnabled ? "ENABLED" : "DISABLED"}`
+  );
+  console.log("------------------------------------------------------------");
+  console.log(`│ Starting Balance: $${config.initialBalance.toFixed(2)}`);
+  console.log(`│ Spendable Cash: $${portfolio.cashReserve.toFixed(2)}`);
+  console.log("------------------------------------------------------------");
+  console.log(`│ Trading Parameters:`);
+  console.log(
+    `│ ├─ Max Trade Size: $${(
+      config.initialBalance * config.maxTradePercent
+    ).toFixed(2)}`
+  );
+  console.log(`│ ├─ Profit Lock: ${config.profitLockPercent * 100}%`);
+  console.log(`│ ├─ Grid Levels: ${config.gridLevels}`);
+  console.log(`│ └─ Slippage: ${(config.defaultSlippage * 100).toFixed(2)}%`);
+  console.log("************************************************************\n");
 
   const interval = setInterval(async () => {
     if (portfolio.dailyTradeCount >= config.maxDailyTrades)
