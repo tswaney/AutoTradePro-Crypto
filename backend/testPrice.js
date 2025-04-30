@@ -1,5 +1,5 @@
 // testPrice.js - Grid Bot with Strategy Selection and Manual Holdings
-// Uses PowerShell-style headers, AI optimization, and CLI strategy selection
+// Uses PowerShell-style headers, AI optimization, per-coin P/L display, and CLI strategy selection
 
 require("dotenv").config();
 const axios = require("axios");
@@ -12,15 +12,15 @@ const readline = require("readline");
 // ==============================================
 const config = {
   aiEnabled: process.env.AI_ENABLED === "true",
-  demoMode: true, // Only supports demo trading currently
+  demoMode: true,
   initialBalance: parseFloat(process.env.INITIAL_BALANCE) || 1000,
   maxTradePercent: 0.5,
   profitLockPercent: 0.2,
   minTradeAmount: 0.01,
   cashReservePercent: 0.15,
-  baseBuyThreshold: -0.5,
-  baseSellThreshold: 0.5,
-  checkInterval: 30000,
+  baseBuyThreshold: -1.5,
+  baseSellThreshold: 1.5,
+  checkInterval: 60000,
   priceDecimalPlaces: 8,
   maxDailyTrades: 50,
   stopLossPercent: -0.3,
@@ -42,24 +42,21 @@ const HEADERS = {
   Origin: "https://robinhood.com",
 };
 
-// ==============================================
-// Portfolio State
-// ==============================================
 let portfolio = {
   cashReserve: config.initialBalance,
   lockedCash: 0,
-  cryptos: {}, // Each symbol gets amount, grid, and costBasis
+  cryptos: {},
   dailyTradeCount: 0,
+  startTime: new Date(),
 };
-let strategies = {}; // Per-symbol strategy state
-let selectedStrategy = null; // Chosen strategy module
 
-// Format prices to n decimals
+let strategies = {};
+let selectedStrategy = null;
+
 function formatPrice(price) {
   return parseFloat(price).toFixed(config.priceDecimalPlaces);
 }
 
-// Initializes strategy structure per crypto symbol
 function initializeStrategy(symbol) {
   return {
     buyThreshold: config.baseBuyThreshold,
@@ -73,14 +70,13 @@ function initializeStrategy(symbol) {
   };
 }
 
-// Loads crypto amounts from local json file
 function loadHoldings() {
   const data = JSON.parse(
     fs.readFileSync(path.join(__dirname, "cryptoHoldings.json"), "utf-8")
   );
   for (const symbol in data) {
     const amount = parseFloat(data[symbol]);
-    if (amount > 0) {
+    if (amount > 0.01) {
       portfolio.cryptos[symbol] = {
         amount,
         grid: [],
@@ -96,7 +92,6 @@ function loadHoldings() {
   );
 }
 
-// Fetches current price from Robinhood quote endpoint
 async function getPrice(symbol) {
   try {
     const response = await axios.get(`${BASE_URL}${symbol}/`, {
@@ -116,7 +111,6 @@ async function getPrice(symbol) {
   }
 }
 
-// Executes trade using grid logic
 function executeTrade(symbol, action, price) {
   const crypto = portfolio.cryptos[symbol];
   const strategy = strategies[symbol];
@@ -130,7 +124,6 @@ function executeTrade(symbol, action, price) {
   const adjusted =
     price * (1 + (action === "buy" ? strategy.slippage : -strategy.slippage));
   const amount = usd / adjusted;
-
   if (action === "buy") {
     portfolio.cashReserve -= usd;
     crypto.amount += amount;
@@ -154,7 +147,6 @@ function executeTrade(symbol, action, price) {
     portfolio.cashReserve += usd + profit * (1 - config.profitLockPercent);
     crypto.amount -= amount;
   }
-
   portfolio.dailyTradeCount++;
   console.log(
     `[${
@@ -165,15 +157,12 @@ function executeTrade(symbol, action, price) {
   );
 }
 
-// Executes one cycle of strategy for a symbol
 async function runStrategyForSymbol(symbol) {
   if (portfolio.dailyTradeCount >= config.maxDailyTrades) return;
   const price = await getPrice(symbol);
   if (!price) return;
-
   const strat = strategies[symbol];
   strat.module.updateStrategyState(symbol, strat);
-
   const trade = strat.module.getTradeDecision({
     price,
     lastPrice: strat.lastPrice,
@@ -181,11 +170,9 @@ async function runStrategyForSymbol(symbol) {
     strategyState: strat,
     config,
   });
-
   if (trade?.action) executeTrade(symbol, trade.action, price);
 }
 
-// Lists available strategy modules and prompts user to choose one
 async function promptStrategySelection() {
   const files = fs.readdirSync(path.join(__dirname, "strategies"));
   const available = files.filter((f) => f.endsWith(".js"));
@@ -202,7 +189,6 @@ async function promptStrategySelection() {
     input: process.stdin,
     output: process.stdout,
   });
-
   return new Promise((resolve) => {
     rl.question("\nSelect strategy [default 1]: ", (input) => {
       const index = parseInt(input.trim());
@@ -217,40 +203,91 @@ async function promptStrategySelection() {
 }
 
 // ==============================================
-// MAIN EXECUTION
+// MAIN
 // ==============================================
 (async () => {
-  await promptStrategySelection(); // CLI prompt to pick strategy
-  loadHoldings(); // Load holdings from file
-
-  // Apply strategy to each crypto
+  await promptStrategySelection();
+  loadHoldings();
   for (const symbol in portfolio.cryptos) {
     strategies[symbol] = initializeStrategy(symbol);
   }
-
   console.log(`\n🚀 ${config.strategy}`);
   console.log(`Symbol(s): ${Object.keys(portfolio.cryptos).join(", ")}`);
 
-  // Repeats trading loop every X seconds
   const interval = setInterval(async () => {
     if (portfolio.dailyTradeCount >= config.maxDailyTrades)
       return clearInterval(interval);
     for (const symbol in portfolio.cryptos) await runStrategyForSymbol(symbol);
   }, config.checkInterval);
 
-  // Graceful shutdown with performance summary
   process.on("SIGINT", () => {
     clearInterval(interval);
+    const now = new Date();
+    const durationMin = Math.floor((now - portfolio.startTime) / 60000);
     let total = portfolio.cashReserve + portfolio.lockedCash;
+    const rows = [];
+
     for (const symbol in portfolio.cryptos) {
-      total +=
-        portfolio.cryptos[symbol].amount * (strategies[symbol].lastPrice || 0);
+      const strat = strategies[symbol];
+      const holding = portfolio.cryptos[symbol].amount;
+      const value = holding * (strat.lastPrice || 0);
+      const basis = portfolio.cryptos[symbol].costBasis || 0;
+      const basisValue = holding * basis;
+      const pl = value - basisValue;
+      const plPct = basisValue ? (pl / basisValue) * 100 : 0;
+      total += value;
+      rows.push({ symbol, holding, value, basis, pl, plPct });
     }
+
     console.log(
-      `\n💼 FINAL VALUE: $${total.toFixed(2)} | Trades: ${
-        portfolio.dailyTradeCount
-      }`
+      "\n************************************************************"
     );
+    console.log("💼 FINAL STRATEGY PERFORMANCE");
+    console.log("------------------------------------------------------------");
+    console.log(`│ Strategy: ${config.strategy}`);
+    console.log(`│ Duration: ${durationMin} min`);
+    console.log(`│ Trades Executed: ${portfolio.dailyTradeCount}`);
+    console.log("------------------------------------------------------------");
+    console.log(`│ Final Portfolio Value: $${total.toFixed(2)}`);
+    console.log(
+      `│ Net Profit/Loss: $${(total - config.initialBalance).toFixed(2)} (${(
+        ((total - config.initialBalance) / config.initialBalance) *
+        100
+      ).toFixed(2)}%)`
+    );
+    console.log(`│ Starting Balance: $${config.initialBalance.toFixed(2)}`);
+    console.log(`│ Locked Profits: $${portfolio.lockedCash.toFixed(2)}`);
+    console.log(`│ Cash Reserve: $${portfolio.cashReserve.toFixed(2)}`);
+    console.log("------------------------------------------------------------");
+    console.log("📊 Coin Breakdown:");
+    console.log(
+      "│  Symbol   Holdings      Value     Cost Basis     P/L ($)   P/L (%)"
+    );
+    console.log(
+      "│ -------------------------------------------------------------------"
+    );
+    rows.forEach((r) => {
+      console.log(
+        `│  ${r.symbol.padEnd(7)} ${r.holding.toFixed(4).padEnd(13)} $${r.value
+          .toFixed(2)
+          .padEnd(9)} $${r.basis.toFixed(2).padEnd(12)} ${
+          r.pl >= 0 ? "+" : ""
+        }$${r.pl.toFixed(2).padEnd(8)} ${
+          r.plPct >= 0 ? "+" : ""
+        }${r.plPct.toFixed(2)}%`
+      );
+    });
+    console.log(
+      "│ -------------------------------------------------------------------"
+    );
+    console.log("📘 Strategy Notes:");
+    console.log(
+      "- Grid-based buy/sell enforced per symbol with fixed slippage."
+    );
+    console.log(
+      "- Profit locking, max trade per crypto, and AI-driven fallback built-in."
+    );
+    console.log("************************************************************");
     process.exit(0);
   });
 })();
