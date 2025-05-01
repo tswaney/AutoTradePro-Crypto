@@ -8,19 +8,19 @@ const path = require("path");
 const readline = require("readline");
 
 // ==============================================
-// Configuration
+// Configuration (via .env file and fallback)
 // ==============================================
 const config = {
   aiEnabled: process.env.AI_ENABLED === "true",
-  demoMode: true,
+  demoMode: process.env.DEMO_MODE === "true",
   initialBalance: parseFloat(process.env.INITIAL_BALANCE) || 1000,
   maxTradePercent: 0.5,
   profitLockPercent: 0.2,
   minTradeAmount: 0.01,
   cashReservePercent: 0.15,
-  baseBuyThreshold: -1.5,
-  baseSellThreshold: 1.5,
-  checkInterval: 60000,
+  baseBuyThreshold: -0.005,
+  baseSellThreshold: 0.05,
+  checkInterval: 30000,
   priceDecimalPlaces: 8,
   maxDailyTrades: 50,
   stopLossPercent: -0.3,
@@ -47,6 +47,7 @@ let portfolio = {
   lockedCash: 0,
   cryptos: {},
   dailyTradeCount: 0,
+  tradeNumber: 0,
   startTime: new Date(),
 };
 
@@ -102,8 +103,18 @@ async function getPrice(symbol) {
     strategies[symbol].priceHistory.push(price);
     if (strategies[symbol].priceHistory.length > 100)
       strategies[symbol].priceHistory.shift();
+    const last = strategies[symbol].lastPrice;
     strategies[symbol].lastPrice = price;
-    console.log(`✅ ${symbol} Price: $${formatPrice(price)}`);
+    const pct = last ? ((price - last) / last) * 100 : 0;
+    const trend = pct > 0.01 ? "UP" : pct < -0.01 ? "DOWN" : "NEUTRAL";
+    strategies[symbol].trend = trend.toLowerCase();
+    console.log(
+      `✅ ${symbol} Price: $${formatPrice(
+        price
+      )}\n[STRATEGY] ${trend} trend, Δ ${pct.toFixed(4)}%, grid size: ${
+        portfolio.cryptos[symbol].grid.length
+      }`
+    );
     return price;
   } catch (error) {
     console.error(`❌ Price fetch failed for ${symbol}:`, error.message);
@@ -147,14 +158,35 @@ function executeTrade(symbol, action, price) {
     portfolio.cashReserve += usd + profit * (1 - config.profitLockPercent);
     crypto.amount -= amount;
   }
+  portfolio.tradeNumber++;
   portfolio.dailyTradeCount++;
+  console.log(`\n  ==================================================`);
   console.log(
-    `[${
+    `  [${
       config.demoMode ? "DEMO" : "LIVE"
-    }] ${action.toUpperCase()} ${amount.toFixed(4)} ${symbol} @ $${formatPrice(
-      adjusted
-    )}`
+    }] ${action.toUpperCase()} ${amount.toFixed(4)} ${symbol}`
   );
+  console.log(
+    `  @ $${formatPrice(adjusted)} ($${usd.toFixed(2)})\n  Trade #${
+      portfolio.tradeNumber
+    }`
+  );
+  console.log(`  --------------------------------------------------`);
+  console.log(`  Portfolio Snapshot:`);
+  console.log(
+    `  ├─ Cash Reserve: $${portfolio.cashReserve.toFixed(
+      2
+    )}\n  ├─ Locked Profit: $${portfolio.lockedCash.toFixed(2)}`
+  );
+  console.log(
+    `  ├─ ${symbol} Holdings: ${crypto.amount.toFixed(4)}\n  ├─ Cost Basis: $${
+      crypto.costBasis
+    }`
+  );
+  console.log(
+    `  ├─ Current Trend: ${strategy.trend.toUpperCase()}\n  └─ Unrealized P/L: $0.00`
+  );
+  console.log(`  ==================================================`);
 }
 
 async function runStrategyForSymbol(symbol) {
@@ -237,8 +269,10 @@ async function promptStrategySelection() {
   console.log("************************************************************\n");
 
   const interval = setInterval(async () => {
-    if (portfolio.dailyTradeCount >= config.maxDailyTrades)
-      return clearInterval(interval);
+    if (portfolio.dailyTradeCount >= config.maxDailyTrades) {
+      clearInterval(interval);
+      process.emit("SIGINT");
+    }
     for (const symbol in portfolio.cryptos) await runStrategyForSymbol(symbol);
   }, config.checkInterval);
 
@@ -283,24 +317,24 @@ async function promptStrategySelection() {
     console.log("------------------------------------------------------------");
     console.log("📊 Coin Breakdown:");
     console.log(
-      "│  Symbol   Holdings      Value     Cost Basis     P/L ($)   P/L (%)"
+      "│  Symbol     Holdings        Value       Cost Basis     P/L ($)     P/L (%)"
     );
     console.log(
-      "│ -------------------------------------------------------------------"
+      "│ ------------------------------------------------------------------------------"
     );
     rows.forEach((r) => {
       console.log(
-        `│  ${r.symbol.padEnd(7)} ${r.holding.toFixed(4).padEnd(13)} $${r.value
+        `│  ${r.symbol.padEnd(10)}${r.holding.toFixed(4).padEnd(15)}$${r.value
           .toFixed(2)
-          .padEnd(9)} $${r.basis.toFixed(2).padEnd(12)} ${
+          .padEnd(12)}$${r.basis.toFixed(8).padEnd(15)}${
           r.pl >= 0 ? "+" : ""
-        }$${r.pl.toFixed(2).padEnd(8)} ${
+        }$${r.pl.toFixed(2).padEnd(10)}${
           r.plPct >= 0 ? "+" : ""
         }${r.plPct.toFixed(2)}%`
       );
     });
     console.log(
-      "│ -------------------------------------------------------------------"
+      "│ ------------------------------------------------------------------------------"
     );
     console.log("📘 Strategy Notes:");
     console.log(
