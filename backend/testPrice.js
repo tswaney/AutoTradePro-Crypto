@@ -14,18 +14,18 @@ const readline = require("readline");
 const config = {
   aiEnabled: process.env.AI_ENABLED === "true",
   demoMode: process.env.DEMO_MODE === "true",
-  initialBalance: parseFloat(process.env.INITIAL_BALANCE) || 1000, // Beginning cash
+  initialBalance: parseFloat(process.env.INITIAL_BALANCE) || 1000,
   maxTradePercent: 0.5,
   profitLockPercent: 0.2,
   minTradeAmount: 0.01,
   cashReservePercent: 0.15,
-  baseBuyThreshold: -1.5,
-  baseSellThreshold: 1.5,
-  checkInterval: 30000, // ms between checks
+  baseBuyThreshold: -0.005,
+  baseSellThreshold: 0.05,
+  checkInterval: 30000,
   priceDecimalPlaces: 8,
-  maxDailyTrades: 50, // total trades allowed per rolling window
-  tradeReserve: 5, // reserved trades for stop-loss (45 normal trades)
-  stopLossPercent: -0.3, // stop‐loss threshold
+  maxDailyTrades: 50,
+  tradeReserve: 5,
+  stopLossPercent: -0.3,
   atrLookbackPeriod: 14,
   gridLevels: 5,
   defaultSlippage: 0.02,
@@ -33,13 +33,13 @@ const config = {
 };
 
 // ==============================================
-// API Setup (PowerShell-style headers)
+// API Setup
 // ==============================================
 const BASE_URL = "https://api.robinhood.com/marketdata/forex/quotes/";
 const HEADERS = {
   Authorization: `Bearer ${process.env.ROBINHOOD_API_KEY}`,
   "Content-Type": "application/json",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell/7.2.0",
+  "User-Agent": "Mozilla/5.0 PowerShell/7.2.0",
   Accept: "application/json",
   Origin: "https://robinhood.com",
 };
@@ -51,17 +51,15 @@ let portfolio = {
   cashReserve: config.initialBalance,
   lockedCash: 0,
   cryptos: {},
-  dailyTradeCount: 0, // trades used in current window
+  dailyTradeCount: 0,
   tradeNumber: 0,
   startTime: new Date(),
-  lastReset: new Date(), // when we last reset the trade count
-  initialCryptoValue: 0, // computed at startup
-  beginningPortfolioValue: 0, // cash + crypto at startup
+  lastReset: new Date(),
+  initialCryptoValue: 0,
+  beginningPortfolioValue: 0,
 };
 
-// 24 hours in milliseconds
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
 let strategies = {};
 let selectedStrategy = null;
 
@@ -83,6 +81,34 @@ function initializeStrategy(symbol) {
     lastPrice: null,
     module: selectedStrategy,
   };
+}
+
+async function promptStrategySelection() {
+  const files = fs.readdirSync(path.join(__dirname, "strategies"));
+  const modules = files
+    .filter((f) => f.endsWith(".js"))
+    .map((f) => require(`./strategies/${f}`))
+    .filter((m) => m.name && m.version && m.description);
+
+  console.log("\n📌 Available Strategies:");
+  modules.forEach((s, i) =>
+    console.log(` [${i + 1}] ${s.name} (${s.version}) - ${s.description}`)
+  );
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question("\nSelect strategy [default 1]: ", (input) => {
+      const idx = parseInt(input.trim());
+      const strat = modules[idx > 0 && idx <= modules.length ? idx - 1 : 0];
+      rl.close();
+      config.strategy = `${strat.name} (${strat.version})`;
+      selectedStrategy = strat;
+      resolve();
+    });
+  });
 }
 
 function loadHoldings() {
@@ -189,7 +215,6 @@ function executeTrade(symbol, action, price) {
 }
 
 async function runStrategyForSymbol(symbol) {
-  // Calculate normal and rescue limits
   const normalLimit = config.maxDailyTrades - config.tradeReserve;
   const rescueLimit = config.maxDailyTrades;
 
@@ -202,8 +227,7 @@ async function runStrategyForSymbol(symbol) {
     )}%, grid size: ${portfolio.cryptos[symbol].grid.length}`
   );
 
-  // Suppress module logs
-  const orig = console.log;
+  const origLog = console.log;
   console.log = () => {};
   const strat = strategies[symbol];
   strat.module.updateStrategyState(symbol, strat);
@@ -214,51 +238,19 @@ async function runStrategyForSymbol(symbol) {
     strategyState: strat,
     config,
   });
-  console.log = orig;
+  console.log = origLog;
 
   if (!decision?.action) return;
 
-  // Determine if we can execute:
   if (portfolio.dailyTradeCount < normalLimit) {
-    // Still within normal trades
     executeTrade(symbol, decision.action, info.price);
   } else if (
     portfolio.dailyTradeCount >= normalLimit &&
     portfolio.dailyTradeCount < rescueLimit &&
     decision.action === "sell"
   ) {
-    // Within rescue window, allow only sells (stop-loss protection)
     executeTrade(symbol, "sell", info.price);
   }
-  // Otherwise beyond rescueLimit: no trades
-}
-
-async function promptStrategySelection() {
-  const mods = fs
-    .readdirSync(path.join(__dirname, "strategies"))
-    .filter((f) => f.endsWith(".js"))
-    .map((f) => require(`./strategies/${f}`))
-    .filter((m) => m.name && m.version && m.description);
-
-  console.log("\n📌 Available Strategies:");
-  mods.forEach((s, i) =>
-    console.log(` [${i + 1}] ${s.name} (${s.version}) - ${s.description}`)
-  );
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise((resolve) => {
-    rl.question("\nSelect strategy [default 1]: ", (input) => {
-      const idx = parseInt(input.trim());
-      const strat = mods[idx > 0 && idx <= mods.length ? idx - 1 : 0];
-      rl.close();
-      config.strategy = `${strat.name} (${strat.version})`;
-      selectedStrategy = strat;
-      resolve();
-    });
-  });
 }
 
 // ==============================================
@@ -268,7 +260,7 @@ async function promptStrategySelection() {
   await promptStrategySelection();
   loadHoldings();
 
-  // Initialize per-symbol state
+  // Initialize strategies
   for (const sym of Object.keys(portfolio.cryptos)) {
     strategies[sym] = initializeStrategy(sym);
   }
@@ -284,13 +276,17 @@ async function promptStrategySelection() {
   portfolio.initialCryptoValue = initialCryptoVal;
   portfolio.beginningPortfolioValue = config.initialBalance + initialCryptoVal;
 
-  // One-time demo reset at startup (45 usable)
+  // Demo reset
   if (config.demoMode) {
     portfolio.dailyTradeCount = 0;
     console.log("🔄 [DEMO] Starting with fresh trade count (45 usable).");
   }
 
-  // Startup summary
+  // Startup summary with Max Crypto Trade Size
+  const cryptoCount = Object.keys(portfolio.cryptos).length;
+  const totalMaxTrade = config.initialBalance * config.maxTradePercent;
+  const perCryptoMaxTrade = totalMaxTrade / cryptoCount;
+
   console.log("\n************************************************************");
   console.log(`🚀 AutoTradePro Crypto - ${config.strategy}`);
   console.log("------------------------------------------------------------");
@@ -310,9 +306,9 @@ async function promptStrategySelection() {
   console.log("------------------------------------------------------------");
   console.log("│ Trading Parameters:");
   console.log(
-    `│ ├─ Max Trade Size: $${(
-      config.initialBalance * config.maxTradePercent
-    ).toFixed(2)}`
+    `│ ├─ Max Crypto Trade Size: $${perCryptoMaxTrade.toFixed(
+      2
+    )} * ${cryptoCount} Cryptos = $${totalMaxTrade.toFixed(2)}`
   );
   console.log(`│ ├─ Profit Lock: ${config.profitLockPercent * 100}%`);
   console.log(`│ ├─ Stop Loss: ${(config.stopLossPercent * 100).toFixed(2)}%`);
@@ -329,7 +325,6 @@ async function promptStrategySelection() {
   const interval = setInterval(async () => {
     const now = Date.now();
 
-    // Rolling-window reset after 24h
     if (now - portfolio.lastReset.getTime() >= ONE_DAY_MS) {
       portfolio.dailyTradeCount = 0;
       portfolio.lastReset = new Date(now);
@@ -340,7 +335,6 @@ async function promptStrategySelection() {
     const normalLimit = config.maxDailyTrades - config.tradeReserve;
     const rescueRemain = config.maxDailyTrades - used;
 
-    // If we've reached normal limit, show warning
     if (used >= normalLimit && used < config.maxDailyTrades) {
       const resetTime = new Date(
         portfolio.lastReset.getTime() + ONE_DAY_MS
@@ -351,7 +345,6 @@ async function promptStrategySelection() {
       );
     }
 
-    // Still allow runStrategyForSymbol to apply stop-loss trades
     for (const sym of Object.keys(portfolio.cryptos)) {
       await runStrategyForSymbol(sym);
     }
@@ -362,7 +355,6 @@ async function promptStrategySelection() {
     clearInterval(interval);
     const durationMin = Math.floor((new Date() - portfolio.startTime) / 60000);
 
-    // Build P/L grid
     const rows = [];
     for (const sym of Object.keys(portfolio.cryptos)) {
       const strat = strategies[sym];
