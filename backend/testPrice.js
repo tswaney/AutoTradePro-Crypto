@@ -109,9 +109,10 @@ async function promptStrategySelection() {
     output: process.stdout,
   });
   return new Promise((resolve) => {
-    rl.question("\nSelect strategy [default 2]: ", (input) => {
+    // default to strategy #3 (index 2)
+    rl.question("\nSelect strategy [default 3]: ", (input) => {
       const idx = parseInt(input.trim());
-      const strat = modules[idx > 0 && idx <= modules.length ? idx - 1 : 1];
+      const strat = modules[idx > 0 && idx <= modules.length ? idx - 1 : 2];
       rl.close();
       config.strategy = `${strat.name} (${strat.version})`;
       selectedStrategy = strat;
@@ -158,6 +159,7 @@ function printHoldingsTable() {
   cols.forEach(
     (c) => (widths[c] = Math.max(c.length, ...rows.map((r) => r[c].length)))
   );
+
   const sep = (l, m, r) => {
     let line = l;
     cols.forEach(
@@ -169,6 +171,7 @@ function printHoldingsTable() {
 
   console.log("\nCurrent Holdings:");
   console.log(sep("┌", "┬", "┐"));
+
   // Header
   let hdr = "│";
   cols.forEach((c) => {
@@ -179,6 +182,7 @@ function printHoldingsTable() {
   });
   console.log(hdr);
   console.log(sep("├", "┼", "┤"));
+
   // Rows
   rows.forEach((r) => {
     let line = "│";
@@ -202,22 +206,24 @@ async function getPrice(symbol) {
     const strat = strategies[symbol];
     const prev = strat.lastPrice;
 
+    // maintain only last (atrLookbackPeriod+1) prices
     strat.priceHistory.push(price);
     if (strat.priceHistory.length > config.atrLookbackPeriod + 1)
       strat.priceHistory.shift();
 
-    // update ATR and thresholds
+    // update ATR thresholds
     selectedStrategy.updateStrategyState(symbol, strat, config);
 
-    strat.trendHistory.push(
+    // track trendHistory
+    const dir =
       prev === null
         ? "neutral"
         : price > prev
         ? "up"
         : price < prev
         ? "down"
-        : "neutral"
-    );
+        : "neutral";
+    strat.trendHistory.push(dir);
     if (strat.trendHistory.length > 3) strat.trendHistory.shift();
 
     strat.lastPrice = price;
@@ -278,9 +284,11 @@ async function runStrategyForSymbol(symbol) {
   if (!info) return;
   const { price } = info;
 
+  // DEBUG
   console.log(
-    `→ ${symbol}: lastPrice=${oldPrice}, price=${price}, ` +
-      `trendHistory=[${strat.trendHistory.join(",")}]`
+    `→ ${symbol}: lastPrice=${oldPrice}, price=${price}, trendHistory=[${strat.trendHistory.join(
+      ","
+    )}]`
   );
 
   const decision = strat.module.getTradeDecision({
@@ -310,18 +318,17 @@ async function runStrategyForSymbol(symbol) {
     await refreshDemoCostBasis();
   }
 
-  // initial price fetch for table
+  // initial fetch & table
   for (const s of Object.keys(portfolio.cryptos)) {
     await getPrice(s);
   }
-
   printHoldingsTable();
 
   if (config.demoMode) {
     portfolio.buysToday = portfolio.sellsToday = portfolio.stopLossesToday = 0;
   }
 
-  // compute starting values
+  // compute initial values
   let initCrypto = 0;
   for (const s of Object.keys(portfolio.cryptos)) {
     const { price } = await getPrice(s);
@@ -352,7 +359,7 @@ async function runStrategyForSymbol(symbol) {
   );
   console.log("================\n");
 
-  // initial run
+  // first run
   for (const s of Object.keys(portfolio.cryptos)) {
     await runStrategyForSymbol(s);
   }
