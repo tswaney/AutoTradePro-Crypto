@@ -1,67 +1,67 @@
 {
   "BTCUSD": {
     "amount": 0.03969466,
-    "costBasis": 96637.676532075
+    "costBasis": 96568.941715965
   },
   "BONKUSD": {
     "amount": 106092858,
-    "costBasis": 0.00001828
+    "costBasis": 0.000018185
   },
   "ETHUSD": {
     "amount": 0.7195392675156308,
-    "costBasis": 1832.580509835
+    "costBasis": 1838.5450412
   },
   "XLMUSD": {
     "amount": 3922.68,
-    "costBasis": 0.2739735
+    "costBasis": 0.27389691
   },
   "POPCATUSD": {
     "amount": 2208.58,
-    "costBasis": 0.4068076
+    "costBasis": 0.40070055
   },
   "PEPEUSD": {
     "amount": 81263652,
-    "costBasis": 0.000008555
+    "costBasis": 0.00000855
   },
   "XRPUSD": {
     "amount": 174.409,
-    "costBasis": 2.2166
+    "costBasis": 2.217895
   },
   "TRUMPUSD": {
     "amount": 26.1449,
-    "costBasis": 13.052247085
+    "costBasis": 13.003958715
   },
   "ADAUSD": {
     "amount": 86.16,
-    "costBasis": 0.6970509
+    "costBasis": 0.7020012
   },
   "SOLUSD": {
     "amount": 0.26014,
-    "costBasis": 148.712098775
+    "costBasis": 148.093215
   },
   "LTCUSD": {
     "amount": 0.40682263,
-    "costBasis": 87.51
+    "costBasis": 87.56774
   },
   "DOGEUSD": {
     "amount": 87.69090496,
-    "costBasis": 0.181354435
+    "costBasis": 0.18060779
   },
   "SHIBUSD": {
     "amount": 997179.42,
-    "costBasis": 0.000013365
+    "costBasis": 0.000013345
   },
   "LINKUSD": {
     "amount": 0.4387969694709001,
-    "costBasis": 14.51142536
+    "costBasis": 14.501253455
   },
   "AVAXUSD": {
     "amount": 0.047,
-    "costBasis": 21.09
+    "costBasis": 21.139929
   },
   "COMPUSD": {
     "amount": 0.0190439760174337,
-    "costBasis": 41.15164
+    "costBasis": 41.385
   },
   "UNIUSD": {
     "amount": 0.0014942076882846,
