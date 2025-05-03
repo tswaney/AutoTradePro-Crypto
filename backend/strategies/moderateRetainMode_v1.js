@@ -1,4 +1,4 @@
-// ModerateRetainMode.js - Grid-based trading strategy
+// ModerateRetainMode_v1.js - Grid-based trading strategy
 module.exports = {
   name: "Moderate Retain Mode",
   version: "v1.0",

@@ -1,5 +1,5 @@
 // backend/testPrice.js
-// Grid Bot with Strategy Selection and Manual Holdings
+// Grid Bot with Strategy Selection, Manual Holdings, and Status Shortcut (Ctrl+S)
 
 require("dotenv").config();
 const axios = require("axios");
@@ -69,9 +69,9 @@ let portfolio = {
   lockedCash: 0,
   cryptos: {},
 
-  buysToday: 0, // count of buys executed today
-  sellsToday: 0, // count of profit-sells executed today
-  stopLossesToday: 0, // count of stop-loss sells today
+  buysToday: 0,
+  sellsToday: 0,
+  stopLossesToday: 0,
 
   dailyProfitTotal: 0,
 
@@ -129,8 +129,8 @@ async function promptStrategySelection() {
     input: process.stdin,
     output: process.stdout,
   });
+
   return new Promise((resolve) => {
-    // default to strategy #4 (index 3)
     rl.question("\nSelect strategy [default 4]: ", (input) => {
       const idx = parseInt(input.trim());
       const strat = modules[idx > 0 && idx <= modules.length ? idx - 1 : 3];
@@ -227,10 +227,8 @@ async function getPrice(symbol) {
     if (strat.priceHistory.length > config.atrLookbackPeriod + 1)
       strat.priceHistory.shift();
 
-    // update ATR & thresholds
     selectedStrategy.updateStrategyState(symbol, strat, config);
 
-    // record trend
     const dir =
       prev == null
         ? "neutral"
@@ -265,7 +263,6 @@ function executeTrade(symbol, action, price, overrideSize) {
   const size = overrideSize || usd / adjPrice;
 
   if (action === "buy") {
-    // enforce buy cap
     if (portfolio.buysToday >= config.buyLimit) {
       console.log("⚠️  Buy limit reached; skipping buy.");
       return;
@@ -276,9 +273,11 @@ function executeTrade(symbol, action, price, overrideSize) {
     portfolio.cashReserve -= adjPrice * size;
     crypto.amount += size;
     crypto.grid.push({ price: adjPrice, amount: size, time: Date.now() });
-    // recompute cost basis
-    const totalVal = crypto.grid.reduce((s, l) => s + l.price * l.amount, 0);
-    const totalAmt = crypto.grid.reduce((s, l) => s + l.amount, 0);
+    const totalVal = crypto.grid.reduce(
+      (sum, lot) => sum + lot.price * lot.amount,
+      0
+    );
+    const totalAmt = crypto.grid.reduce((sum, lot) => sum + lot.amount, 0);
     crypto.costBasis = totalVal / totalAmt;
     console.log(
       `🎉 \x1b[32m>>> BUY ${size.toFixed(4)} ${symbol} @${adjPrice.toFixed(
@@ -287,7 +286,6 @@ function executeTrade(symbol, action, price, overrideSize) {
         `BUY Trade #${tradeNo} of ${config.buyLimit} (${tradesLeft} left)`
     );
   } else {
-    // stop-loss vs profit-sell
     const potentialSize = overrideSize || usd / adjPrice;
     const potentialProfit = (adjPrice - crypto.costBasis) * potentialSize;
     if (potentialProfit < minProfitPerTrade) {
@@ -298,7 +296,6 @@ function executeTrade(symbol, action, price, overrideSize) {
       );
       return;
     }
-    // enforce sell cap
     if (portfolio.sellsToday >= config.sellLimit) {
       console.log("⚠️  Sell limit reached; skipping sell.");
       return;
@@ -326,7 +323,6 @@ async function runStrategyForSymbol(symbol) {
     console.log("🎯 Daily profit target reached; pausing trades.");
     return;
   }
-
   const strat = strategies[symbol];
   const hold = portfolio.cryptos[symbol];
   const oldPrice = strat.lastPrice;
@@ -337,7 +333,6 @@ async function runStrategyForSymbol(symbol) {
       info.price
     }, trendHistory=[${strat.trendHistory.join(",")}]`
   );
-
   const decision = strat.module.getTradeDecision({
     price: info.price,
     lastPrice: oldPrice,
@@ -346,8 +341,34 @@ async function runStrategyForSymbol(symbol) {
     config,
   });
   if (!decision || !decision.action) return;
-
   executeTrade(symbol, decision.action, info.price);
+}
+
+function printStatus() {
+  const cryptoVal = Object.keys(portfolio.cryptos).reduce(
+    (sum, sym) =>
+      sum + (strategies[sym].lastPrice || 0) * portfolio.cryptos[sym].amount,
+    0
+  );
+  const avg =
+    portfolio.sellsToday > 0
+      ? (portfolio.dailyProfitTotal / portfolio.sellsToday).toFixed(2)
+      : "N/A";
+
+  console.log("\n=== STATUS INFORMATION ===");
+  console.log(`Buys Today:         ${portfolio.buysToday}/${config.buyLimit}`);
+  console.log(
+    `Profit-Sells Today: ${portfolio.sellsToday}/${config.sellLimit}`
+  );
+  console.log(
+    `Stop-Loss Sells:    ${portfolio.stopLossesToday}/${config.stopLossLimit}`
+  );
+  console.log(`Total Profit Today: $${portfolio.dailyProfitTotal.toFixed(2)}`);
+  console.log(`Average Profit/Sell: $${avg}`);
+  console.log(`Cash Reserve:       $${portfolio.cashReserve.toFixed(2)}`);
+  console.log(`Crypto Value:       $${cryptoVal.toFixed(2)}`);
+  console.log(`Locked Cash:        $${portfolio.lockedCash.toFixed(2)}`);
+  console.log("============================\n");
 }
 
 // ==============================================
@@ -371,9 +392,7 @@ async function runStrategyForSymbol(symbol) {
   printHoldingsTable();
 
   if (config.demoMode) {
-    portfolio.buysToday = 0;
-    portfolio.sellsToday = 0;
-    portfolio.stopLossesToday = 0;
+    portfolio.buysToday = portfolio.sellsToday = portfolio.stopLossesToday = 0;
   }
 
   // compute starting values
@@ -390,21 +409,37 @@ async function runStrategyForSymbol(symbol) {
   const totalMax = config.initialBalance * config.maxTradePercent;
   console.log("\n=== STARTUP ===");
   console.log(
-    `Beginning Value: $${portfolio.beginningPortfolioValue.toFixed(2)}`
+    `Beginning Value:       $${portfolio.beginningPortfolioValue.toFixed(2)}`
   );
-  console.log(`  – Cash:         $${config.initialBalance.toFixed(2)}`);
-  console.log(`  – Crypto:       $${initCrypto.toFixed(2)}`);
-  console.log(`  – Locked Cash:  $${portfolio.lockedCash.toFixed(2)}`);
+  console.log(`  – Cash:              $${config.initialBalance.toFixed(2)}`);
+  console.log(`  – Crypto:            $${initCrypto.toFixed(2)}`);
+  console.log(`  – Locked Cash:       $${portfolio.lockedCash.toFixed(2)}`);
   console.log(
-    `Max Trade Size:  $${(totalMax / N).toFixed(
+    `Max Trade Size:       $${(totalMax / N).toFixed(
       2
     )} * ${N} = $${totalMax.toFixed(2)}`
   );
-  console.log(`Buy Limit:       ${config.buyLimit}`);
-  console.log(`Sell Limit:      ${config.sellLimit}`);
-  console.log(`Stop-Loss Limit: ${config.stopLossLimit}`);
-  console.log(`Daily Profit Target: $${config.dailyProfitTarget}`);
+  console.log(`Buy Limit:            ${config.buyLimit}`);
+  console.log(`Sell Limit:           ${config.sellLimit}`);
+  console.log(`Stop-Loss Limit:      ${config.stopLossLimit}`);
+  console.log(`Daily Profit Target:  $${config.dailyProfitTarget}`);
   console.log("================\n");
+
+  // Enable Ctrl+S / Ctrl+C handling
+  readline.emitKeypressEvents(process.stdin);
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+    process.stdin.setEncoding("utf8");
+    process.stdin.resume();
+  }
+  process.stdin.on("keypress", (_str, key) => {
+    if (key.ctrl && key.name === "s") {
+      printStatus();
+    } else if (key.ctrl && key.name === "c") {
+      process.stdin.setRawMode(false);
+      process.emit("SIGINT");
+    }
+  });
 
   // initial run
   for (const sym of Object.keys(portfolio.cryptos)) {
@@ -428,14 +463,15 @@ async function runStrategyForSymbol(symbol) {
     }
   }, config.checkInterval);
 
-  // on CTRL+C, print final summary
+  // on CTRL+C or SIGINT, print final summary & exit
   process.on("SIGINT", async () => {
     clearInterval(interval);
-    // recalc final crypto value
+
     let finalCrypto = 0;
     for (const sym of Object.keys(portfolio.cryptos)) {
       await getPrice(sym);
-      finalCrypto += strategies[sym].lastPrice * portfolio.cryptos[sym].amount;
+      finalCrypto +=
+        (strategies[sym].lastPrice || 0) * portfolio.cryptos[sym].amount;
     }
     const endValue = portfolio.cashReserve + portfolio.lockedCash + finalCrypto;
     const profit = endValue - portfolio.beginningPortfolioValue;
@@ -443,20 +479,22 @@ async function runStrategyForSymbol(symbol) {
 
     const dur = Math.floor((Date.now() - portfolio.startTime) / 60000);
     console.log("\n=== FINAL SUMMARY ===");
-    console.log(`Duration: ${dur} min`);
-    console.log(`Buys:             ${portfolio.buysToday}/${config.buyLimit}`);
+    console.log(`Duration:              ${dur} min`);
     console.log(
-      `Profit-Sells:     ${portfolio.sellsToday}/${config.sellLimit}`
+      `Buys:                  ${portfolio.buysToday}/${config.buyLimit}`
     );
     console.log(
-      `Stop-Loss Sells:  ${portfolio.stopLossesToday}/${config.stopLossLimit}`
+      `Profit-Sells:          ${portfolio.sellsToday}/${config.sellLimit}`
     );
-    console.log(`Total Profit:     $${profit.toFixed(2)}`);
+    console.log(
+      `Stop-Loss Sells:       ${portfolio.stopLossesToday}/${config.stopLossLimit}`
+    );
+    console.log(`Total Profit:          $${profit.toFixed(2)}`);
     console.log("End Portfolio Value Breakdown:");
-    console.log(`  – Cash:         $${portfolio.cashReserve.toFixed(2)}`);
-    console.log(`  – Crypto:       $${finalCrypto.toFixed(2)}`);
-    console.log(`  – Locked Cash:  $${portfolio.lockedCash.toFixed(2)}`);
-    console.log(`  – Total:        $${endValue.toFixed(2)}`);
+    console.log(`  – Cash:              $${portfolio.cashReserve.toFixed(2)}`);
+    console.log(`  – Crypto:            $${finalCrypto.toFixed(2)}`);
+    console.log(`  – Locked Cash:       $${portfolio.lockedCash.toFixed(2)}`);
+    console.log(`  – Total:             $${endValue.toFixed(2)}`);
     console.log("====================");
     process.exit(0);
   });
