@@ -97,7 +97,8 @@ async function promptStrategySelection() {
   const modules = files
     .filter((f) => f.endsWith(".js"))
     .map((f) => require(`./strategies/${f}`))
-    .filter((m) => m.name && m.version && m.description);
+    .filter((m) => m.name && m.version && m.description)
+    .sort((a, b) => parseFloat(a.version) - parseFloat(b.version));
 
   console.log("\n📌 Available Strategies:");
   modules.forEach((s, i) =>
