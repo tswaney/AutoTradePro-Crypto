@@ -1,122 +1,148 @@
-// liveTestBonk.js
-// One-off script: SELL $0.01 BONK, then BUY $0.01 BONK
-// – Uses stock-API token for price quotes
-// – Uses Nummus crypto token for currency_pairs lookup & orders
+/**
+ * liveTestBonk.js
+ *
+ * Smoke-test script for AutoTradePro Crypto using Robinhood’s private API:
+ *  - Buys $0.05 worth of BONKUSD
+ *  - Immediately sells that same quantity
+ *
+ * Prerequisites:
+ *  1. In your `.env`, set:
+ *       ROBINHOOD_API_KEY=<your Bearer token (from PowerShell auth)>
+ *       PUBLIC_API_KEY=<your Robinhood public API key>
+ *       PRIVATE_KEY_PATH=./rh-keypair   // Path to your RSA private key (PEM PKCS#1)
+ *  2. Upload the matching public key in Robinhood’s Crypto API portal.
+ *  3. Install dependencies:
+ *       npm install axios dotenv
+ */
 
 require("dotenv").config();
 const axios = require("axios");
-const { randomUUID } = require("crypto");
+const fs = require("fs");
+const path = require("path");
+const { createSign, randomUUID } = require("crypto");
 
-// —––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-// Pull these from your .env (no < >):
-const STOCK_TOKEN = process.env.ROBINHOOD_API_KEY; // stock-API OAuth token
-const CRYPTO_TOKEN = process.env.ROBINHOOD_CRYPTO_TOKEN; // Nummus crypto bearer token
-const ACCOUNT_ID = process.env.ROBINHOOD_ACCOUNT_ID; // MUST be the UUID, e.g. "3d961844-d360-45fc-989b-f6fca761d511"
-const SYMBOL = "BONKUSD";
-const PAIR_SYMBOL = "BONK-USD";
-const USD_AMOUNT = 0.01; // $0.01 worth
+// Configuration
+const TRADE_AMOUNT_USD = 0.05;
+const QUOTE_SYMBOL = "BONKUSD";
+const BEARER_TOKEN = process.env.ROBINHOOD_API_KEY; // Bearer token from PowerShell auth
+const PUBLIC_API_KEY = process.env.PUBLIC_API_KEY;
+const PRIVATE_KEY_PATH = process.env.PRIVATE_KEY_PATH;
 
-// Quick UUID format sanity check
-if (
-  !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    ACCOUNT_ID
-  )
-) {
+if (!BEARER_TOKEN || !PUBLIC_API_KEY || !PRIVATE_KEY_PATH) {
   console.error(
-    `❌ ROBINHOOD_ACCOUNT_ID (“${ACCOUNT_ID}”) does not look like a UUID.`
-  );
-  console.error(
-    "   Make sure you set it to the account *UUID*, not the human account number."
+    "❌ .env must include ROBINHOOD_API_KEY, PUBLIC_API_KEY, and PRIVATE_KEY_PATH"
   );
   process.exit(1);
 }
 
-// —––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-// Endpoints:
-const QUOTE_URL = `https://api.robinhood.com/marketdata/forex/quotes/${SYMBOL}/`;
-const CURRENCY_PAIR_URL = `https://nummus.robinhood.com/currency_pairs/?symbol=${PAIR_SYMBOL}`;
-const CRYPTO_ORDERS = "https://nummus.robinhood.com/orders/";
+// Load RSA private key (PEM PKCS#1 format)
+const privateKey = fs.readFileSync(path.resolve(PRIVATE_KEY_PATH), "utf8");
 
-// —––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-// Headers:
-const STOCK_HEADERS = {
-  Authorization: `Bearer ${STOCK_TOKEN}`,
+// Common headers from testPrice.js (using Bearer token)
+const HEADERS = {
+  Authorization: `Bearer ${BEARER_TOKEN}`,
   "Content-Type": "application/json",
+  "User-Agent": "Mozilla/5.0 PowerShell/7.2.0",
   Accept: "application/json",
   Origin: "https://robinhood.com",
 };
 
-const CRYPTO_HEADERS = {
-  Authorization: `Bearer ${CRYPTO_TOKEN}`,
-  "X-Robinhood-API-Key": "c82SH0WZOsabOXGP2sxqcj34FxkvfnWRZBKlBjFS",
-  "Content-Type": "application/json",
-  Accept: "application/json",
-  Origin: "https://robinhood.com",
-};
-
-// —––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-async function getPrice() {
-  const res = await axios.get(QUOTE_URL, { headers: STOCK_HEADERS });
-  return parseFloat(res.data.mark_price);
-}
-
-async function getCurrencyPairId() {
-  const res = await axios.get(CURRENCY_PAIR_URL, { headers: CRYPTO_HEADERS });
-  const list = res.data.results;
-  if (!Array.isArray(list) || !list.length) {
+/** Fetch current mark price for QUOTE_SYMBOL */
+async function fetchPrice() {
+  const url = `https://api.robinhood.com/marketdata/forex/quotes/${QUOTE_SYMBOL}/`;
+  try {
+    const resp = await axios.get(url, { headers: HEADERS });
+    const price = parseFloat(resp.data.mark_price);
+    console.log(`🔄 Current price (${QUOTE_SYMBOL}): $${price}`);
+    return price;
+  } catch (err) {
     console.error(
-      "❌ Could not find currency_pairs entry:",
-      JSON.stringify(res.data, null, 2)
+      "❌ Error fetching market price:",
+      err.response?.data || err.message
     );
     process.exit(1);
   }
-  return list[0].id;
 }
 
-async function placeCryptoOrder(side, quantity, pairId) {
-  const body = {
-    account_id: ACCOUNT_ID,
-    currency_pair_id: pairId,
-    side, // 'buy' or 'sell'
+/** Place a signed RSA-SHA256 market order */
+async function placeOrder(side, qty) {
+  const apiPath = "/api/v1/crypto/trading/orders/";
+  const method = "POST";
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+
+  const payload = {
+    client_order_id: randomUUID(),
+    symbol: QUOTE_SYMBOL.replace("USD", "-USD"),
+    side: side,
     type: "market",
-    time_in_force: "gfd",
-    quantity: quantity.toFixed(8),
-    ref_id: randomUUID(), // proper v4 UUID
+    market_order_config: { asset_quantity: qty.toString() },
   };
-  const res = await axios.post(CRYPTO_ORDERS, body, {
-    headers: CRYPTO_HEADERS,
-  });
-  return res.data;
+
+  // Message to sign: timestamp + method + path + JSON body
+  const message = timestamp + method + apiPath + JSON.stringify(payload);
+  const signer = createSign("sha256");
+  signer.update(message);
+  // const signature = signer.sign(privateKey, "base64");
+  const raw = signer.sign(privateKey); // Buffer
+  let signature = raw
+    .toString("base64") // standard Base64
+    .replace(/\+/g, "-") // 62nd char
+    .replace(/\//g, "_") // 63rd char
+    .replace(/=+$/, ""); // trim padding
+
+  // Merge HEADERS with signed order headers
+  // const orderHeaders = {
+  //   ...HEADERS,
+  //   "x-api-key": PUBLIC_API_KEY,
+  //   "x-timestamp": timestamp,
+  //   "x-signature": signature,
+  // };
+  const orderHeaders = {
+    ...HEADERS,
+    "x-api-key": PUBLIC_API_KEY,
+    "x-timestamp": timestamp,
+    "x-signature": signature,
+  };
+
+  console.log(
+    `🚀 ${side.toUpperCase()} ${qty} ${payload.symbol} (sig ${signature.slice(
+      0,
+      8
+    )}...)`
+  );
+  try {
+    const { data } = await axios.post(
+      `https://trading.robinhood.com${apiPath}`,
+      payload,
+      { headers: orderHeaders }
+    );
+    console.log(`✅ ${side} order accepted. Order ID: ${data.id}`);
+    return data;
+  } catch (err) {
+    console.error(
+      `❌ Error placing ${side} order:`,
+      err.response?.data || err.message
+    );
+    process.exit(1);
+  }
 }
 
 (async () => {
-  try {
-    // 1) Fetch price & compute qty
-    console.log("→ Fetching BONKUSD price...");
-    const price = await getPrice();
-    console.log(`  Current price: $${price.toFixed(8)}`);
-    const qty = USD_AMOUNT / price;
-    console.log(`  Qty for $${USD_AMOUNT}: ${qty.toFixed(8)} BONK`);
+  console.log("=== liveTestBonk.js Smoke Test ===");
 
-    // 2) Lookup currency_pair_id
-    console.log("→ Fetching currency_pair_id for BONK-USD...");
-    const pairId = await getCurrencyPairId();
-    console.log(`  currency_pair_id: ${pairId}`);
+  // 1) Fetch price
+  const price = await fetchPrice();
 
-    // 3) SELL
-    console.log(`\n→ SELL $${USD_AMOUNT} BONK (qty ${qty.toFixed(8)})…`);
-    const sellResp = await placeCryptoOrder("sell", qty, pairId);
-    console.log("  SELL response:", sellResp);
+  // 2) Calculate quantity
+  let qty = TRADE_AMOUNT_USD / price;
+  qty = parseFloat(qty.toFixed(8));
+  console.log(`📊 Qty for $${TRADE_AMOUNT_USD}: ${qty}`);
 
-    // 4) BUY
-    console.log(`\n→ BUY  $${USD_AMOUNT} BONK (qty ${qty.toFixed(8)})…`);
-    const buyResp = await placeCryptoOrder("buy", qty, pairId);
-    console.log("  BUY response:", buyResp);
+  // 3) Execute buy then sell
+  await placeOrder("buy", qty);
+  console.log("⏳ Waiting 5s for buy fill...");
+  await new Promise((res) => setTimeout(res, 5000));
+  await placeOrder("sell", qty);
 
-    console.log("\n✅ Done. Exiting.");
-    process.exit(0);
-  } catch (err) {
-    console.error("⚠️  Live test error:", err.response?.data || err.message);
-    process.exit(1);
-  }
+  console.log("🏁 Smoke test complete.");
 })();
