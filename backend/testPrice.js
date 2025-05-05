@@ -1,6 +1,10 @@
 // backend/testPrice.js
 // Grid Bot with Strategy Selection, Manual Holdings, and Status Shortcut (Ctrl+S)
 
+// force a refresh before anything else
+require("child_process").execSync("node refreshToken.js", { stdio: "inherit" });
+require("dotenv").config();
+
 require("dotenv").config();
 const axios = require("axios");
 const fs = require("fs");
