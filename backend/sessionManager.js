@@ -1,8 +1,5 @@
-/**
- * sessionManager.js
- *
- * Persists Robinhood OAuth tokens to disk and auto-refreshes when expired.
- */
+// sessionManager.js
+// Persists Robinhood OAuth tokens to disk and auto-refreshes when expired.
 
 const fs = require("fs");
 const path = require("path");
@@ -23,7 +20,8 @@ function loadSession() {
   if (!fs.existsSync(SESSION_FILE)) return null;
   try {
     return JSON.parse(fs.readFileSync(SESSION_FILE, "utf8"));
-  } catch {
+  } catch (err) {
+    console.error("❌ Failed to parse session file:", err.message);
     return null;
   }
 }
@@ -36,21 +34,28 @@ function saveSession(session) {
 // Refresh the access_token using refresh_token grant
 async function refreshSession(refreshToken) {
   const form = qs.stringify({
-    grant_type: "refresh_token",
+    grant_type:    "refresh_token",
     refresh_token: refreshToken,
-    client_id: CLIENT_ID,
-    scope: "internal",
+    client_id:     CLIENT_ID
   });
+
   const resp = await axios.post(
     "https://api.robinhood.com/oauth2/token/",
     form,
-    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept":       "application/json",
+        "User-Agent":   "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"
+      }
+    }
   );
+
   return {
-    accessToken: resp.data.access_token,
+    accessToken:  resp.data.access_token,
     refreshToken: resp.data.refresh_token || refreshToken,
-    // expires_in is in seconds: set an absolute expiry timestamp
-    expiresAt: Date.now() + resp.data.expires_in * 1000 - 60 * 1000, // refresh 1m early
+    // Set expiresAt to now + expires_in (ms) - 1m
+    expiresAt:    Date.now() + (resp.data.expires_in * 1000) - (60 * 1000)
   };
 }
 
@@ -58,16 +63,20 @@ async function refreshSession(refreshToken) {
 async function getAccessToken() {
   let sess = loadSession();
   if (sess && sess.accessToken && sess.expiresAt > Date.now()) {
+    console.log("🔑 Using cached access token");
     return sess.accessToken;
   }
+
   if (!sess || !sess.refreshToken) {
     throw new Error(
-      "No session found. Please run your initial fetchAuthToken flow."
+      "No session found. Please seed rh_session.json with valid tokens."
     );
   }
+
   console.log("🔄 Refreshing access token...");
   sess = await refreshSession(sess.refreshToken);
   saveSession(sess);
+  console.log("✅ Session updated, next expiry at", new Date(sess.expiresAt));
   return sess.accessToken;
 }
 
