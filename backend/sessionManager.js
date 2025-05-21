@@ -1,83 +1,36 @@
-// sessionManager.js
-// Persists Robinhood OAuth tokens to disk and auto-refreshes when expired.
-
+// backend/sessionManager.js
+require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
-const qs = require("querystring");
-require("dotenv").config();
 
-const SESSION_FILE = path.resolve(__dirname, "rh_session.json");
-const { CLIENT_ID, PUBLIC_API_KEY } = process.env;
-
-if (!CLIENT_ID) {
-  console.error("❌ Set CLIENT_ID in your .env");
+// 1) Load your session token (if used)
+let sessionToken = process.env.ROBINHOOD_SESSION_TOKEN;
+if (!sessionToken) {
+  // fallback: maybe load from rh_session.json
+  const sessPath = path.resolve(__dirname, "rh_session.json");
+  if (fs.existsSync(sessPath)) {
+    sessionToken = JSON.parse(fs.readFileSync(sessPath, "utf8")).token;
+  }
+}
+if (!sessionToken) {
+  console.error("❌ Missing ROBINHOOD_SESSION_TOKEN");
   process.exit(1);
 }
 
-// Load session from disk, or return null
-function loadSession() {
-  if (!fs.existsSync(SESSION_FILE)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(SESSION_FILE, "utf8"));
-  } catch (err) {
-    console.error("❌ Failed to parse session file:", err.message);
-    return null;
-  }
+// 2) Load your registered API key
+const PUBLIC_API_KEY = process.env.ROBINHOOD_API_KEY;
+if (!PUBLIC_API_KEY) {
+  console.error("❌ Missing ROBINHOOD_API_KEY (your dev API key)");
+  process.exit(1);
 }
 
-// Save session (tokens + expiry timestamp) to disk
-function saveSession(session) {
-  fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
-}
-
-// Refresh the access_token using refresh_token grant
-async function refreshSession(refreshToken) {
-  const form = qs.stringify({
-    grant_type:    "refresh_token",
-    refresh_token: refreshToken,
-    client_id:     CLIENT_ID
-  });
-
-  const resp = await axios.post(
-    "https://api.robinhood.com/oauth2/token/",
-    form,
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept":       "application/json",
-        "User-Agent":   "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"
-      }
-    }
-  );
-
-  return {
-    accessToken:  resp.data.access_token,
-    refreshToken: resp.data.refresh_token || refreshToken,
-    // Set expiresAt to now + expires_in (ms) - 1m
-    expiresAt:    Date.now() + (resp.data.expires_in * 1000) - (60 * 1000)
-  };
-}
-
-// Returns a valid access_token, refreshing & persisting if needed
 async function getAccessToken() {
-  let sess = loadSession();
-  if (sess && sess.accessToken && sess.expiresAt > Date.now()) {
-    console.log("🔑 Using cached access token");
-    return sess.accessToken;
-  }
-
-  if (!sess || !sess.refreshToken) {
-    throw new Error(
-      "No session found. Please seed rh_session.json with valid tokens."
-    );
-  }
-
-  console.log("🔄 Refreshing access token...");
-  sess = await refreshSession(sess.refreshToken);
-  saveSession(sess);
-  console.log("✅ Session updated, next expiry at", new Date(sess.expiresAt));
-  return sess.accessToken;
+  // If Robinhood Crypto truly uses the API key as bearer, return PUBLIC_API_KEY here
+  // Otherwise return your sessionToken:
+  return sessionToken;
 }
 
-module.exports = { getAccessToken, PUBLIC_API_KEY };
+module.exports = {
+  getAccessToken,
+  PUBLIC_API_KEY,
+};
