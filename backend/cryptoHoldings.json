@@ -1,82 +1,178 @@
 {
   "BTCUSD": {
     "amount": 0.03969466,
-    "costBasis": 106596.48811486,
-    "grid": []
+    "costBasis": 109097.4202108,
+    "grid": [
+      {
+        "price": 109162.74484,
+        "amount": 0.03969466,
+        "time": 1747844673504
+      }
+    ]
   },
   "BONKUSD": {
     "amount": 106092858,
-    "costBasis": 0.000020485,
-    "grid": []
+    "costBasis": 0.000021425,
+    "grid": [
+      {
+        "price": 0.000021525,
+        "amount": 106092858,
+        "time": 1747844673504
+      }
+    ]
   },
   "ETHUSD": {
     "amount": 0.7195392675156308,
-    "costBasis": 2540.113844175,
-    "grid": []
+    "costBasis": 2579.15407,
+    "grid": [
+      {
+        "price": 2582.4282023,
+        "amount": 0.7195392675156308,
+        "time": 1747844673504
+      }
+    ]
   },
   "XLMUSD": {
     "amount": 3922.68,
-    "costBasis": 0.29114381,
-    "grid": []
+    "costBasis": 0.2947802,
+    "grid": [
+      {
+        "price": 0.29454295,
+        "amount": 3922.68,
+        "time": 1747844673504
+      }
+    ]
   },
   "POPCATUSD": {
     "amount": 2208.58,
-    "costBasis": 0.46785516,
-    "grid": []
+    "costBasis": 0.49684289,
+    "grid": [
+      {
+        "price": 0.49715,
+        "amount": 2208.58,
+        "time": 1747844673504
+      }
+    ]
   },
   "PEPEUSD": {
     "amount": 81263652,
-    "costBasis": 0.000013805,
-    "grid": []
+    "costBasis": 0.00001425,
+    "grid": [
+      {
+        "price": 0.000014335,
+        "amount": 81263652,
+        "time": 1747844673504
+      }
+    ]
   },
   "XRPUSD": {
     "amount": 174.409,
-    "costBasis": 2.3547,
-    "grid": []
+    "costBasis": 2.40598,
+    "grid": [
+      {
+        "price": 2.40484056,
+        "amount": 174.409,
+        "time": 1747844673504
+      }
+    ]
   },
   "TRUMPUSD": {
     "amount": 26.1449,
-    "costBasis": 14.392882875,
-    "grid": []
+    "costBasis": 14.90060493,
+    "grid": [
+      {
+        "price": 14.900189265,
+        "amount": 26.1449,
+        "time": 1747844673504
+      }
+    ]
   },
   "ADAUSD": {
     "amount": 86.16,
-    "costBasis": 0.7534509,
-    "grid": []
+    "costBasis": 0.7719509,
+    "grid": [
+      {
+        "price": 0.7699012,
+        "amount": 86.16,
+        "time": 1747844673504
+      }
+    ]
   },
   "SOLUSD": {
     "amount": 0.26014,
-    "costBasis": 169.41001791,
-    "grid": []
+    "costBasis": 172.27272,
+    "grid": [
+      {
+        "price": 172.339379145,
+        "amount": 0.26014,
+        "time": 1747844673504
+      }
+    ]
   },
   "LTCUSD": {
     "amount": 0.40682263,
-    "costBasis": 95.11539,
-    "grid": []
+    "costBasis": 96.97843968,
+    "grid": [
+      {
+        "price": 96.84503601,
+        "amount": 0.40682263,
+        "time": 1747844673504
+      }
+    ]
   },
   "DOGEUSD": {
     "amount": 87.69090496,
-    "costBasis": 0.226847835,
-    "grid": []
+    "costBasis": 0.233459775,
+    "grid": [
+      {
+        "price": 0.233324045,
+        "amount": 87.69090496,
+        "time": 1747844673504
+      }
+    ]
   },
   "SHIBUSD": {
     "amount": 997179.42,
-    "costBasis": 0.000014545,
-    "grid": []
+    "costBasis": 0.000014955,
+    "grid": [
+      {
+        "price": 0.000014885,
+        "amount": 997179.42,
+        "time": 1747844673504
+      }
+    ]
   },
   "LINKUSD": {
     "amount": 0.4387969694709001,
-    "costBasis": 15.711639545,
-    "grid": []
+    "costBasis": 16.22412441,
+    "grid": [
+      {
+        "price": 16.192066685,
+        "amount": 0.4387969694709001,
+        "time": 1747844673504
+      }
+    ]
   },
   "AVAXUSD": {
     "amount": 0.047,
-    "costBasis": 22.708391,
-    "grid": []
+    "costBasis": 23.395824,
+    "grid": [
+      {
+        "price": 23.335,
+        "amount": 0.047,
+        "time": 1747844673504
+      }
+    ]
   },
   "COMPUSD": {
     "amount": 0.0190439760174337,
-    "costBasis": 42.990266515,
-    "grid": []
+    "costBasis": 43.864879915,
+    "grid": [
+      {
+        "price": 43.746573365,
+        "amount": 0.0190439760174337,
+        "time": 1747844673504
+      }
+    ]
   }
 }

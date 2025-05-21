@@ -1,36 +1,49 @@
-// strategies/simpleBuySell.js
-// Version 1.1: Simple Buy Low/Sell High with Cost-Basis Gating
+// strategies/simpleBuySell_v1.1.js
+// Version 1.1: Simple Buy Low / Sell High (cost‐basis gating)
 
 module.exports = {
-  name: "Simple Buy Low/Sell High",
-  version: "1.1",
+  name:        "Simple Buy Low/Sell High",
+  version:     "1.1",
   description:
-    "Buys when price dips below costBasis by baseBuyThreshold; " +
-    "sells when price rises above costBasis by baseSellThreshold; " +
-    "ensures cost-basis gating for grid consistency.",
+    "Buys when price dips below costBasis by baseBuyThreshold; sells when price " +
+    "rises above costBasis by baseSellThreshold; straightforward cost-basis gating.",
 
-  /**
-   * Decide whether to buy/sell based on:
-   *  - percentage move from last tick
-   *  - costBasis gating (must buy below costBasis, sell above costBasis)
-   */
-  getTradeDecision({ price, lastPrice, costBasis, strategyState, config }) {
-    // Need a previous price to compare
-    if (lastPrice == null) return;
+  updateStrategyState(symbol, state, config) {
+    const h = state.priceHistory;
+    if (h.length < 2) return;
+    const prev = h[h.length - 2], curr = h[h.length - 1];
+    const delta = (curr - prev) / prev;
+    state.delta = delta;
+    state.trend = delta > 0 ? "up" : delta < 0 ? "down" : "neutral";
+  },
 
-    // Percentage change since last tick
-    const pctChange = (price - lastPrice) / lastPrice;
+  getTradeDecision({ price, costBasis, strategyState: s, config }) {
+    // 1) Always log the [STRATEGY] line
+    console.log(
+      `[STRATEGY] ${s.trend.toUpperCase()} trend, Δ ${(s.delta * 100).toFixed(4)}%, grid size: ${s.grid.length}`
+    );
 
-    // BUY: price < costBasis AND downward move exceeds threshold
-    if (price < costBasis && pctChange <= config.baseBuyThreshold) {
+    // 2) Compute delta vs cost basis
+    const deltaCost = (price - costBasis) / costBasis;
+    const pct = (deltaCost * 100).toFixed(4);
+
+    // 3) BUY if dipped past threshold
+    if (deltaCost <= config.baseBuyThreshold) {
+      console.log(
+        `🟢 [SIMPLE] BUY triggered: Δcost ${pct}% <= ${(config.baseBuyThreshold*100).toFixed(2)}%`
+      );
       return { action: "buy" };
     }
 
-    // SELL: price > costBasis AND upward move exceeds threshold
-    if (price > costBasis && pctChange >= config.baseSellThreshold) {
+    // 4) SELL if up above threshold
+    if (deltaCost >= config.baseSellThreshold) {
+      console.log(
+        `🔴 [SIMPLE] SELL triggered: Δcost ${pct}% >= ${(config.baseSellThreshold*100).toFixed(2)}%`
+      );
       return { action: "sell" };
     }
 
-    // Otherwise hold
+    // 5) Otherwise HOLD
+    return;
   },
 };
