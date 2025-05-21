@@ -1,70 +1,82 @@
 {
   "BTCUSD": {
     "amount": 0.03969466,
-    "costBasis": 95965.252037215
+    "costBasis": 107057.14813,
+    "grid": []
   },
   "BONKUSD": {
     "amount": 106092858,
-    "costBasis": 0.00001642
+    "costBasis": 0.00002023,
+    "grid": []
   },
   "ETHUSD": {
     "amount": 0.7195392675156308,
-    "costBasis": 1844.23969337
+    "costBasis": 2549.37083975,
+    "grid": []
   },
   "XLMUSD": {
     "amount": 3922.68,
-    "costBasis": 0.2710665
+    "costBasis": 0.28867732,
+    "grid": []
   },
   "POPCATUSD": {
     "amount": 2208.58,
-    "costBasis": 0.367380695
+    "costBasis": 0.462122005,
+    "grid": []
   },
   "PEPEUSD": {
     "amount": 81263652,
-    "costBasis": 0.00000814
+    "costBasis": 0.000013555,
+    "grid": []
   },
   "XRPUSD": {
     "amount": 174.409,
-    "costBasis": 2.208605
+    "costBasis": 2.36328875,
+    "grid": []
   },
   "TRUMPUSD": {
     "amount": 26.1449,
-    "costBasis": 11.230945985
+    "costBasis": 14.40035069,
+    "grid": []
   },
   "ADAUSD": {
     "amount": 86.16,
-    "costBasis": 0.7025515
+    "costBasis": 0.7525509,
+    "grid": []
   },
   "SOLUSD": {
     "amount": 0.26014,
-    "costBasis": 146.222274575
+    "costBasis": 170.070315,
+    "grid": []
   },
   "LTCUSD": {
     "amount": 0.40682263,
-    "costBasis": 86.505
+    "costBasis": 95.0395991,
+    "grid": []
   },
   "DOGEUSD": {
     "amount": 87.69090496,
-    "costBasis": 0.175894655
+    "costBasis": 0.229605715,
+    "grid": []
   },
   "SHIBUSD": {
     "amount": 997179.42,
-    "costBasis": 0.000013165
+    "costBasis": 0.000014705,
+    "grid": []
   },
   "LINKUSD": {
     "amount": 0.4387969694709001,
-    "costBasis": 14.218337795
+    "costBasis": 15.882203165,
+    "grid": []
   },
   "AVAXUSD": {
     "amount": 0.047,
-    "costBasis": 20.3786616
+    "costBasis": 22.599715,
+    "grid": []
   },
   "COMPUSD": {
     "amount": 0.0190439760174337,
-    "costBasis": 40.125
-  },
-  "UNIUSD": {
-    "amount": 0.0014942076882846,
-    "costBasis": 0.1
+    "costBasis": 43.277429325,
+    "grid": []
   }
 }
