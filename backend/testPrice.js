@@ -34,14 +34,14 @@ const config = {
   demoMode:           process.env.DEMO_MODE     === 'true',
   initialBalance:     parseFloat(process.env.INITIAL_BALANCE) || 1000,
   minTradeAmount:     0.01,
-  baseBuyThreshold:   -0.000005,   // –0.0005%
-  baseSellThreshold:   0.00005,    // +0.005%
+  baseBuyThreshold:  -0.01,   // –1%
+  baseSellThreshold:  0.01,   // +1%
   atrLookbackPeriod:  14,
   gridLevels:         5,
   defaultSlippage:    0.02,
   priceDecimalPlaces: 8,
-  buyLimit:           22,
-  sellLimit:          23,
+  buyLimit:           Infinity, // 22,
+  sellLimit:          Infinity, // 23,
   stopLossLimit:      5,
   stopLossPercent:   -0.3,
   dailyProfitTarget: 100,
