@@ -1,177 +1,177 @@
 {
   "BTCUSD": {
     "amount": 0.03969466,
-    "costBasis": 111459.40534,
+    "costBasis": 110729.34370274,
     "grid": [
       {
-        "price": 111378.8604,
+        "price": 111459.40534,
         "amount": 0.03969466,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "BONKUSD": {
     "amount": 106092858,
-    "costBasis": 0.000021215,
+    "costBasis": 0.00002186,
     "grid": [
       {
-        "price": 0.000021195,
+        "price": 0.000021215,
         "amount": 106092858,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "ETHUSD": {
     "amount": 0.7195392675156308,
-    "costBasis": 2639.37724,
+    "costBasis": 2654.3357286,
     "grid": [
       {
-        "price": 2638.21832,
+        "price": 2639.37724,
         "amount": 0.7195392675156308,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "XLMUSD": {
     "amount": 3922.68,
-    "costBasis": 0.298695,
+    "costBasis": 0.30074964,
     "grid": [
       {
-        "price": 0.29853,
+        "price": 0.298695,
         "amount": 3922.68,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "POPCATUSD": {
     "amount": 2208.58,
-    "costBasis": 0.52415117,
+    "costBasis": 0.530385235,
     "grid": [
       {
-        "price": 0.52437724,
+        "price": 0.52415117,
         "amount": 2208.58,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "PEPEUSD": {
     "amount": 81263652,
-    "costBasis": 0.00001404,
+    "costBasis": 0.000014405,
     "grid": [
       {
-        "price": 0.00001403,
+        "price": 0.00001404,
         "amount": 81263652,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "XRPUSD": {
     "amount": 174.409,
-    "costBasis": 2.416351765,
+    "costBasis": 2.42116293,
     "grid": [
       {
-        "price": 2.41527771,
+        "price": 2.416351765,
         "amount": 174.409,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "TRUMPUSD": {
     "amount": 26.1449,
-    "costBasis": 14.496836405,
+    "costBasis": 15.20509375,
     "grid": [
       {
-        "price": 14.48973835,
+        "price": 14.496836405,
         "amount": 26.1449,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "ADAUSD": {
     "amount": 86.16,
-    "costBasis": 0.7911521,
+    "costBasis": 0.7990018,
     "grid": [
       {
-        "price": 0.7906018,
+        "price": 0.7911521,
         "amount": 86.16,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "SOLUSD": {
     "amount": 0.26014,
-    "costBasis": 177.053135,
+    "costBasis": 178.27318737,
     "grid": [
       {
-        "price": 177.080235,
+        "price": 177.053135,
         "amount": 0.26014,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "LTCUSD": {
     "amount": 0.40682263,
-    "costBasis": 99.04712,
+    "costBasis": 98.4661187,
     "grid": [
       {
-        "price": 99.14751,
+        "price": 99.04712,
         "amount": 0.40682263,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "DOGEUSD": {
     "amount": 87.69090496,
-    "costBasis": 0.24098508,
+    "costBasis": 0.239936945,
     "grid": [
       {
-        "price": 0.240988165,
+        "price": 0.24098508,
         "amount": 87.69090496,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "SHIBUSD": {
     "amount": 997179.42,
-    "costBasis": 0.00001514,
+    "costBasis": 0.000015285,
     "grid": [
       {
-        "price": 0.000015125,
+        "price": 0.00001514,
         "amount": 997179.42,
-        "time": 1747892231977
+        "time": 1747910956808
       }
     ]
   },
   "LINKUSD": {
     "amount": 0.4387969694709001,
-    "costBasis": 16.43796191,
+    "costBasis": 16.536096275,
     "grid": [
       {
-        "price": 16.41821313,
+        "price": 16.43796191,
         "amount": 0.4387969694709001,
-        "time": 1747892231978
+        "time": 1747910956808
       }
     ]
   },
   "AVAXUSD": {
     "amount": 0.047,
-    "costBasis": 24.05,
+    "costBasis": 24.755,
     "grid": [
       {
-        "price": 24.03291,
+        "price": 24.05,
         "amount": 0.047,
-        "time": 1747892231978
+        "time": 1747910956808
       }
     ]
   },
   "COMPUSD": {
     "amount": 0.0190439760174337,
-    "costBasis": 44.660390645,
+    "costBasis": 44.730244435,
     "grid": [
       {
-        "price": 44.63145102,
+        "price": 44.660390645,
         "amount": 0.0190439760174337,
-        "time": 1747892231978
+        "time": 1747910956808
       }
     ]
   }

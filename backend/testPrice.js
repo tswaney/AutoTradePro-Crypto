@@ -34,8 +34,8 @@ const config = {
   demoMode:           process.env.DEMO_MODE    === 'true',
   initialBalance:     parseFloat(process.env.INITIAL_BALANCE) || 1000,
   minTradeAmount:     0.01,
-  baseBuyThreshold:   -0.005,   // –0.5%
-  baseSellThreshold:   0.005,   // +0.5%
+  baseBuyThreshold:   -0.03,   // –3% expressed as decimal fractions of the cost-basis
+  baseSellThreshold:   0.02,   // +2% expressed as decimal fractions of the cost-basis
   atrLookbackPeriod:  14,
   gridLevels:         5,
   defaultSlippage:    0.02,
@@ -218,7 +218,9 @@ function printGrid() {
     const grid = strategies[sym].grid;
     console.log(`\n${sym} grid:`);
     if (!grid.length) console.log('  (empty)');
-    else grid.forEach((lot,i)=> console.log(`  [${i+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`));
+    else grid.forEach((lot,i)=>
+      console.log(`  [${i+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`)
+    );
   });
   console.log('=== END GRID ===\n');
 }
@@ -236,12 +238,21 @@ async function getPrice(symbol) {
     const price = parseFloat(res.data.mark_price);
     const strat  = strategies[symbol];
     const prev   = strat.lastPrice;
+
+    // Rolling price history
     strat.priceHistory.push(price);
     if (strat.priceHistory.length > config.atrLookbackPeriod + 1) strat.priceHistory.shift();
-    if (typeof selectedStrategy.updateStrategyState === 'function') selectedStrategy.updateStrategyState(symbol, strat, config);
+
+    // Strategy‐specific state update
+    if (typeof selectedStrategy.updateStrategyState === 'function') {
+      selectedStrategy.updateStrategyState(symbol, strat, config);
+    }
+
+    // Trend direction
     const dir = prev == null ? 'neutral' : (price>prev ? 'up' : (price<prev ? 'down' : 'neutral'));
     strat.trendHistory.push(dir);
     if (strat.trendHistory.length>3) strat.trendHistory.shift();
+
     strat.lastPrice = price;
     return { price, prev };
   } catch (err) {
@@ -256,12 +267,15 @@ async function getPrice(symbol) {
 function executeTrade(symbol, action, price) {
   const strat   = strategies[symbol];
   const holding = portfolio.cryptos[symbol];
-  const lotSize = holding.grid[0].amount;
 
   if (action === 'BUY') {
+    // limit spend to 25% of cash per trade
+    const lotSize = holding.grid[0].amount;
     const maxSpend = portfolio.cashReserve * 0.25;
-    const spend    = Math.min(price * lotSize * (1 + strat.slippage), maxSpend);
+    const rawCost  = price * lotSize * (1 + strat.slippage);
+    const spend    = Math.min(rawCost, maxSpend);
     const actualQty= spend / (price * (1 + strat.slippage));
+
     portfolio.cashReserve -= spend;
     portfolio.lockedCash  += price * actualQty;
     holding.amount        += actualQty;
@@ -270,15 +284,20 @@ function executeTrade(symbol, action, price) {
     console.log(`🟢 [${selectedStrategy.name}] BUY ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}`);
 
   } else if (action === 'SELL') {
+    // pop oldest lot
     const lot = strat.grid.shift();
     if (!lot) return;
     const qty      = lot.amount;
     const proceeds = price * qty * (1 - strat.slippage);
+
     portfolio.cashReserve += proceeds;
     portfolio.lockedCash  -= lot.price * qty;
     holding.amount        -= qty;
-    holding.costBasis     = strat.grid.length ? strat.grid[strat.grid.length-1].price : holding.costBasis;
-    const pnl      = proceeds - (lot.price * qty);
+    holding.costBasis     = strat.grid.length
+                          ? strat.grid[strat.grid.length-1].price
+                          : holding.costBasis;
+
+    const pnl = proceeds - (lot.price * qty);
     portfolio.dailyProfitTotal += pnl;
     portfolio.sellsToday++;
     console.log(`🔴 [${selectedStrategy.name}] SELL ${qty} ${symbol} @ $${price.toFixed(6)}  P/L $${pnl.toFixed(6)}`);
@@ -291,22 +310,44 @@ function executeTrade(symbol, action, price) {
 async function runStrategyForSymbol(symbol) {
   const info = await getPrice(symbol);
   if (!info) return;
+
   console.log(`→ ${symbol}: price=${info.price.toFixed(config.priceDecimalPlaces)}, trend=[${strategies[symbol].trendHistory.join(',')}]`);
   if (!firstCycleDone) return;
 
-  const decision = selectedStrategy.getTradeDecision({ price: info.price, lastPrice: info.prev, costBasis: portfolio.cryptos[symbol].costBasis, strategyState: strategies[symbol], config });
+  const decision = selectedStrategy.getTradeDecision({
+    price:         info.price,
+    lastPrice:     info.prev,
+    costBasis:     portfolio.cryptos[symbol].costBasis,
+    strategyState: strategies[symbol],
+    config
+  });
   if (!decision) return;
+
   let action = (decision.action || decision.side || '').toString().toUpperCase();
+
   if (action === 'BUY') {
     executeTrade(symbol, 'BUY', info.price);
+
   } else if (action === 'SELL') {
-    // net price after slippage
+    // calculate net change after slippage
     const strat       = strategies[symbol];
     const costBasis   = portfolio.cryptos[symbol].costBasis;
     const netPrice    = info.price * (1 - strat.slippage);
     const netDelta    = (netPrice - costBasis) / costBasis;
+
+    // only sell if meets threshold
     if (netDelta >= config.baseSellThreshold) {
-      executeTrade(symbol, 'SELL', info.price);
+      // ——— NEW: peak‐confirmation logic before SELL ———
+      const hist = strategies[symbol].trendHistory.slice(-3);
+      const isPeak =
+        (hist[0]==='down' && hist[1]==='down' && hist[2]==='down') ||
+        (hist[0]==='up'   && hist[1]==='down' && hist[2]==='down');
+
+      if (isPeak) {
+        executeTrade(symbol, 'SELL', info.price);
+      } else {
+        console.log(`⚠️ [${selectedStrategy.name}] SELL suppressed for ${symbol}: no peak confirmed (last 3 trends: [${hist.join(',')}])`);
+      }
     } else {
       console.log(`⚠️ [${selectedStrategy.name}] SELL skipped for ${symbol}: net Δ ${(netDelta*100).toFixed(4)}% < threshold ${(config.baseSellThreshold*100).toFixed(2)}%`);
     }
@@ -323,7 +364,7 @@ async function printFinalSummary() {
     if (info) finalCrypto += info.price * portfolio.cryptos[sym].amount;
   }
   const endValue = portfolio.cashReserve + portfolio.lockedCash + finalCrypto;
-  const profit   = endValue - portfolio.beginningPortfolioValue;
+  const profit   = endValue - portfolio.beginingPortfolioValue;
   const minutes  = Math.floor((Date.now() - portfolio.startTime) / 60000);
 
   console.log('\n=== TOTAL PORTFOLIO SUMMARY ===');
@@ -344,30 +385,68 @@ async function printFinalSummary() {
 // ==============================================
 (async () => {
   await promptStrategySelection();
+
+  // load + init
   loadHoldings();
-  Object.keys(portfolio.cryptos).forEach(sym => { strategies[sym] = initializeStrategy(sym); strategies[sym].module = selectedStrategy; });
+  Object.keys(portfolio.cryptos).forEach(sym => {
+    strategies[sym]       = initializeStrategy(sym);
+    strategies[sym].module = selectedStrategy;
+  });
   seedStrategyGrids();
+
+  // demo reset
   if (config.demoMode) await refreshDemoCostBasis();
+
+  // initial fetch & table
   await Promise.all(Object.keys(portfolio.cryptos).map(sym => getPrice(sym)));
   printHoldingsTable();
-  if (config.demoMode) portfolio.buysToday = portfolio.sellsToday = portfolio.stopLossesToday = portfolio.dailyProfitTotal = 0;
+
+  // reset demo counters
+  if (config.demoMode) {
+    portfolio.buysToday = portfolio.sellsToday = portfolio.stopLossesToday = portfolio.dailyProfitTotal = 0;
+  }
+
+  // compute starting portfolio value
   let initCrypto = 0;
-  for (const sym of Object.keys(portfolio.cryptos)) { const info = await getPrice(sym); if (info) initCrypto += info.price * portfolio.cryptos[sym].amount; }
+  for (const sym of Object.keys(portfolio.cryptos)) {
+    const info = await getPrice(sym);
+    if (info) initCrypto += info.price * portfolio.cryptos[sym].amount;
+  }
   portfolio.initialCryptoValue      = initCrypto;
   portfolio.beginningPortfolioValue = config.initialBalance + initCrypto;
   console.log(`\n=== STARTUP SUMMARY ===\nBeginning Portfolio Value: $${portfolio.beginningPortfolioValue.toFixed(2)}`);
 
+  // key handlers
   readline.emitKeypressEvents(process.stdin);
   if (process.stdin.isTTY) process.stdin.setRawMode(true);
   process.stdin.setEncoding('utf8');
   process.stdin.resume();
-  process.stdin.on('keypress', (str, key) => { if (key.ctrl && key.name==='s') printStatus(); if (key.ctrl && key.name==='g') printGrid(); if (key.ctrl && key.name==='c') { process.stdin.setRawMode(false); process.emit('SIGINT'); } });
+  process.stdin.on('keypress', (str, key) => {
+    if (key.ctrl && key.name==='s') printStatus();
+    if (key.ctrl && key.name==='g') printGrid();
+    if (key.ctrl && key.name==='c') {
+      process.stdin.setRawMode(false);
+      process.emit('SIGINT');
+    }
+  });
 
+  // initial "seed" pass
   console.log('🔄 Seeding initial cycle (no trades)...');
   await Promise.all(Object.keys(portfolio.cryptos).map(sym => runStrategyForSymbol(sym)));
   firstCycleDone = true;
   console.log('✅ Initial cycle complete — trading now enabled.');
 
-  const interval = setInterval(async () => { for (const sym of Object.keys(portfolio.cryptos)) await runStrategyForSymbol(sym); }, config.checkInterval);
-  process.on('SIGINT', async () => { clearInterval(interval); await printFinalSummary(); process.exit(0); });
+  // recurring loop
+  const interval = setInterval(async () => {
+    for (const sym of Object.keys(portfolio.cryptos)) {
+      await runStrategyForSymbol(sym);
+    }
+  }, config.checkInterval);
+
+  // on exit
+  process.on('SIGINT', async () => {
+    clearInterval(interval);
+    await printFinalSummary();
+    process.exit(0);
+  });
 })();
