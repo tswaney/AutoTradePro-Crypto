@@ -18,32 +18,29 @@ module.exports = {
   },
 
   getTradeDecision({ price, costBasis, strategyState: s, config }) {
-    // 1) Always log the [STRATEGY] line
-    console.log(
-      `[STRATEGY] ${s.trend.toUpperCase()} trend, Δ ${(s.delta * 100).toFixed(4)}%, grid size: ${s.grid.length}`
-    );
+    // (the [STRATEGY] log has been removed — summary is now handled in testPrice.js)
 
-    // 2) Compute delta vs cost basis
+    // Compute delta vs cost basis
     const deltaCost = (price - costBasis) / costBasis;
     const pct = (deltaCost * 100).toFixed(4);
 
-    // 3) BUY if dipped past threshold
+    // BUY if dipped past threshold
     if (deltaCost <= config.baseBuyThreshold) {
       console.log(
-        `🟢 [SIMPLE] BUY triggered: Δcost ${pct}% <= ${(config.baseBuyThreshold*100).toFixed(2)}%`
+        `🟢 [${s.module.name}] BUY triggered: Δcost ${pct}% <= ${(config.baseBuyThreshold*100).toFixed(2)}%`
       );
       return { action: "buy" };
     }
 
-    // 4) SELL if up above threshold
+    // SELL if up above threshold
     if (deltaCost >= config.baseSellThreshold) {
       console.log(
-        `🔴 [SIMPLE] SELL triggered: Δcost ${pct}% >= ${(config.baseSellThreshold*100).toFixed(2)}%`
+        `🔴 [${s.module.name}] SELL triggered: Δcost ${pct}% >= ${(config.baseSellThreshold*100).toFixed(2)}%`
       );
       return { action: "sell" };
     }
 
-    // 5) Otherwise HOLD
+    // Otherwise HOLD
     return;
   },
 };
