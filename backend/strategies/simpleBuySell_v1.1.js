@@ -1,5 +1,8 @@
 // strategies/simpleBuySell_v1.1.js
-// Version 1.1: Simple Buy Low / Sell High (cost‐basis gating)
+// Version 1.1: Simple Buy Low / Sell High (cost-basis gating)
+//
+// Exports a pure strategy object for use in AutoTradePro-Crypto
+// NO logging/output here—main program handles all status/console output
 
 module.exports = {
   name:        "Simple Buy Low/Sell High",
@@ -8,6 +11,15 @@ module.exports = {
     "Buys when price dips below costBasis by baseBuyThreshold; sells when price " +
     "rises above costBasis by baseSellThreshold; straightforward cost-basis gating.",
 
+  /**
+   * updateStrategyState:
+   * Updates internal state such as trend direction and percent change.
+   * Called by the main program after each price update.
+   *
+   * @param {string} symbol
+   * @param {object} state  contains priceHistory, trend, delta
+   * @param {object} config contains base thresholds
+   */
   updateStrategyState(symbol, state, config) {
     const h = state.priceHistory;
     if (h.length < 2) return;
@@ -17,30 +29,33 @@ module.exports = {
     state.trend = delta > 0 ? "up" : delta < 0 ? "down" : "neutral";
   },
 
+  /**
+   * getTradeDecision:
+   * Returns {action: 'buy'} or {action: 'sell'} if conditions are met, or undefined to hold.
+   * Called by the main program with all required context for that symbol.
+   *
+   * @param {object} params
+   * @param {number} params.price         current market price
+   * @param {number} params.costBasis     current cost basis
+   * @param {object} params.strategyState strategy state (trend/delta/history)
+   * @param {object} params.config        current config
+   * @returns {object|undefined}          { action: 'buy'|'sell' }
+   */
   getTradeDecision({ price, costBasis, strategyState: s, config }) {
-    // (the [STRATEGY] log has been removed — summary is now handled in testPrice.js)
-
     // Compute delta vs cost basis
     const deltaCost = (price - costBasis) / costBasis;
-    const pct = (deltaCost * 100).toFixed(4);
 
-    // BUY if dipped past threshold
+    // BUY if price is below cost basis by baseBuyThreshold
     if (deltaCost <= config.baseBuyThreshold) {
-      console.log(
-        `🟢 [${s.module.name}] BUY triggered: Δcost ${pct}% <= ${(config.baseBuyThreshold*100).toFixed(2)}%`
-      );
       return { action: "buy" };
     }
 
-    // SELL if up above threshold
+    // SELL if price is above cost basis by baseSellThreshold
     if (deltaCost >= config.baseSellThreshold) {
-      console.log(
-        `🔴 [${s.module.name}] SELL triggered: Δcost ${pct}% >= ${(config.baseSellThreshold*100).toFixed(2)}%`
-      );
       return { action: "sell" };
     }
 
-    // Otherwise HOLD
+    // Otherwise HOLD (no action)
     return;
   },
 };

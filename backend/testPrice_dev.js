@@ -1,4 +1,4 @@
-// backend/testPrice.js
+// backend/testPrice_dev.js
 
 'use strict';
 
@@ -22,20 +22,18 @@ process.stderr.write = (chunk, encoding, callback) => {
 };
 
 // ==============================================
-// Grid Bot with Strategy Selection, Manual Holdings,
-// Simulated Trading, and Status Shortcut (Ctrl+S) + Grid View (Ctrl+G)
-// ==============================================
-
 // Allow Ctrl+S / Ctrl+G key handling on UNIX terminals
+// ==============================================
 const { execSync } = require('child_process');
 if (process.stdin.isTTY) {
   try { execSync('stty -ixon', { stdio: 'inherit' }); } catch (_) {}
 }
 
+// ==============================================
 // Load environment variables from .env
+// ==============================================
 require('dotenv').config();
 
-// Core modules
 const axios    = require('axios');
 const fs       = require('fs');
 const path     = require('path');
@@ -43,28 +41,30 @@ const readline = require('readline');
 const { getAccessToken, PUBLIC_API_KEY } = require('./sessionManager');
 const { signRequest }                  = require('./signRequest');
 
-// Constants
+// ==============================================
+// Constants, env flags, and strategy config
+// ==============================================
 const TRADING_API = 'https://trading.robinhood.com';
 const USER_AGENT  = 'Mozilla/5.0 PowerShell/7.2.0';
 
-// ==============================================
-// Read thresholds and feature flags from .env
-// ==============================================
 const SIMPLE_BUY_THRESHOLD     = parseFloat(process.env.SIMPLE_BUY_THRESHOLD)  || 2.0;
 const SIMPLE_SELL_THRESHOLD    = parseFloat(process.env.SIMPLE_SELL_THRESHOLD) || 3.0;
 const ENABLE_PEAK_CONFIRMATION = process.env.ENABLE_PEAK_CONFIRMATION === 'true';
 
-// ==============================================
-// TEST MODE CONFIGURATION
-// ==============================================
 const TEST_MODE               = process.env.TEST_MODE === 'true';
 const MAX_TEST_BUYS           = parseInt(process.env.MAX_TEST_BUYS, 10) || 2;
 const MAX_TEST_SELLS          = parseInt(process.env.MAX_TEST_SELLS, 10) || 2;
 const LIMIT_TO_MAX_BUY_SELL   = process.env.LIMIT_TO_MAX_BUY_SELL === 'true';
 
-// ==============================================
-// Configuration (tunable parameters by strategy)
-// ==============================================
+// New: Locked Cash percent, expects a whole number (e.g., 20 for 20%)
+const LOCKED_CASH_PERCENT     = parseFloat(process.env.LOCKED_CASH_PERCENT) || 20;
+const LOCKED_CASH_FRAC        = Math.max(0, Math.min(LOCKED_CASH_PERCENT / 100, 1));
+
+// New: Slippage, expects a whole number (e.g., 2 for 2%)
+const DEFAULT_SLIPPAGE_PCT    = parseFloat(process.env.defaultSlippage) || 2.0;
+const DEFAULT_SLIPPAGE_FRAC   = Math.max(0, Math.min(DEFAULT_SLIPPAGE_PCT / 100, 1));
+
+// Tunable config (per-strategy)
 const config = {
   aiEnabled:           process.env.AI_ENABLED      === 'true',
   demoMode:            process.env.DEMO_MODE       === 'true',
@@ -75,8 +75,8 @@ const config = {
   baseBuyThreshold:   -(SIMPLE_BUY_THRESHOLD  / 100),
   baseSellThreshold:   SIMPLE_SELL_THRESHOLD / 100,
   atrLookbackPeriod:   14,
-  gridLevels:          5,
-  defaultSlippage:     0.02,
+  gridLevels:          100,
+  defaultSlippage:     DEFAULT_SLIPPAGE_FRAC,
   priceDecimalPlaces:  8,
   buyLimit:            Infinity,
   sellLimit:           Infinity,
@@ -96,11 +96,11 @@ console.log(`Peak-confirmation on BUY is ${config.enablePeakFilter ? 'ENABLED' :
 console.log("Press CTRL+S for Status, CTRL+G for Grid, CTRL+C to exit\n");
 
 // ==============================================
-// API & Portfolio State
+// Portfolio State and Strategy Setup
 // ==============================================
 const BASE_URL = 'https://api.robinhood.com/marketdata/forex/quotes/';
 let portfolio = {
-  cashReserve:            config.initialBalance,
+  cashReserve:            parseFloat(config.initialBalance.toFixed(2)),
   lockedCash:             0,
   cryptos:                {},
   buysToday:              0,
@@ -115,55 +115,6 @@ let portfolio = {
 let strategies       = {};
 let selectedStrategy = null;
 let firstCycleDone   = false;
-
-// ==============================================
-// Fetch live crypto-only buying power
-// ==============================================
-async function fetchCryptoBuyingPower() {
-  console.log('>>> Entered fetchCryptoBuyingPower()');
-  const token     = await getAccessToken();
-  console.log('>>> Token present:', Boolean(token));
-
-  const path      = "/api/v1/crypto/billing/buying_power/";
-  const url       = `${TRADING_API}${path}`;
-  const timestamp = Math.floor(Date.now()/1000).toString();
-
-  // Build payload exactly like liveTestBonk (no body)
-  const payload   = `${timestamp}GET${path}`;
-  console.log(">>> signing payload:", payload);
-
-  const signature = signRequest(
-    PUBLIC_API_KEY,
-    timestamp,
-    path,
-    "GET",
-    null
-  );
-  console.log(">>> generated signature:", signature);
-
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "User-Agent":  USER_AGENT,
-    Accept:        "application/json",
-    Origin:        "https://robinhood.com",
-    "x-api-key":   PUBLIC_API_KEY,
-    "x-timestamp": timestamp,
-    "x-signature": signature
-  };
-  console.log(">>> fetchBuyingPower headers:", headers);
-
-  try {
-    const resp = await axios.get(url, { headers, timeout: 10000 });
-    console.log(">>> buying-power response:", resp.data);
-    return parseFloat(resp.data.crypto_buying_power);
-  } catch (err) {
-    console.error("❌ Buying-power fetch failed:",
-      err.response?.status,
-      err.response?.data || err.message
-    );
-    return null;
-  }
-}
 
 // ==============================================
 // Helper: initialize per-symbol strategy state
@@ -203,9 +154,9 @@ async function promptStrategySelection() {
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
-    rl.question('\nSelect strategy [default 4]: ', input => {
+    rl.question('\nSelect strategy [default 1]: ', input => {
       const idx   = parseInt(input.trim(), 10);
-      const strat = modules[(idx > 0 && idx <= modules.length) ? idx-1 : 3];
+      const strat = modules[(idx > 0 && idx <= modules.length) ? idx-1 : 0];
       rl.close();
       config.strategy   = `${strat.name} (${strat.version})`;
       selectedStrategy = strat;
@@ -291,11 +242,37 @@ function printHoldingsTable() {
 }
 
 // ==============================================
-// Print Status on CTRL+S
+// Defensive: Calculate Portfolio Crypto Value
+// ==============================================
+async function computePortfolioCryptoValue() {
+  let total = 0;
+  for (const sym of Object.keys(portfolio.cryptos)) {
+    const info = await getPrice(sym);
+    const qty = Number(portfolio.cryptos[sym].amount);
+    const price = info && Number(info.price);
+    if (!isFinite(price) || !isFinite(qty)) {
+      console.error(`❌ Bad value in crypto calculation for ${sym}: price=${price}, qty=${qty}`);
+      continue;
+    }
+    total += price * qty;
+  }
+  return total;
+}
+
+// ==============================================
+// Print Status on CTRL+S (with defensive math)
 // ==============================================
 function printStatus() {
-  const cryptoVal = Object.keys(portfolio.cryptos)
-    .reduce((sum,sym)=> sum + (strategies[sym].lastPrice||0)*portfolio.cryptos[sym].amount,0);
+  let cryptoVal = 0;
+  for (const sym of Object.keys(portfolio.cryptos)) {
+    const price = Number(strategies[sym].lastPrice);
+    const qty   = Number(portfolio.cryptos[sym].amount);
+    if (isFinite(price) && isFinite(qty)) {
+      cryptoVal += price * qty;
+    } else {
+      console.error(`❌ Bad value in status for ${sym}: price=${price}, qty=${qty}`);
+    }
+  }
 
   const avg = portfolio.sellsToday > 0
     ? (portfolio.dailyProfitTotal/portfolio.sellsToday).toFixed(2)
@@ -305,7 +282,6 @@ function printStatus() {
     ? `${portfolio.stopLossesToday}`
     : `${portfolio.stopLossesToday}/${config.stopLossLimit}`;
 
-  // Only show "/max" in LIVE mode when limitBuysSells is true
   const buysDisplay = config.testMode
     ? `${portfolio.buysToday}`
     : `${portfolio.buysToday}/${config.limitBuysSells ? MAX_TEST_BUYS : '∞'}`;
@@ -314,12 +290,18 @@ function printStatus() {
     ? `${portfolio.sellsToday}`
     : `${portfolio.sellsToday}/${config.limitBuysSells ? MAX_TEST_SELLS : '∞'}`;
 
+  const safe = n => (isFinite(n) ? Number(n).toFixed(2) : "0.00");
+
   console.log('\n=== REALIZED P/L STATUS ===');
   console.log(`Buys:     ${buysDisplay}`);
   console.log(`Sells:    ${sellsDisplay}`);
   console.log(`StopLoss: ${slLimit}`);
-  console.log(`Realized Profit:   $${portfolio.dailyProfitTotal.toLocaleString()} (avg $${avg})`);
-  console.log(`Cash: $${portfolio.cashReserve.toLocaleString()}, Crypto: $${cryptoVal.toLocaleString()}, Locked: $${portfolio.lockedCash.toLocaleString()}`);
+  console.log(`Realized Profit:   $${safe(portfolio.dailyProfitTotal)} (avg $${avg})`);
+    // --- Unrealized P/L calculation ---
+  let cryptoPlusCash = Number(portfolio.cashReserve) + cryptoVal + Number(portfolio.lockedCash || 0);
+  let unrealizedPL = cryptoPlusCash - portfolio.startingPortfolioValue;
+  console.log(`Unrealized P/L:   $${safe(unrealizedPL)}`);
+  console.log(`Cash: $${safe(portfolio.cashReserve)}, Crypto: $${safe(cryptoVal)}, Locked: $${safe(portfolio.lockedCash)}`);
 }
 
 // ==============================================
@@ -375,7 +357,7 @@ async function getPrice(symbol) {
     return { price, prev };
   } catch (err) {
     console.error(`❌ Price fetch failed for ${symbol}:`, err.message);
-    return null;
+    return { price: 0, prev: 0 };
   }
 }
 
@@ -385,39 +367,45 @@ async function getPrice(symbol) {
 function executeTrade(symbol, action, price) {
   const strat   = strategies[symbol];
   const holding = portfolio.cryptos[symbol];
-  const lotSize = holding.grid[0].amount;
+  let lotSize = holding.grid[0].amount;
 
   if (action === 'BUY') {
-    const maxSpend   = portfolio.cashReserve * 0.25;
-    const costPerLot = price * lotSize * (1 + strat.slippage);
+    if (!config.testMode && lotSize > 0.10) lotSize = 0.10;
+    const maxSpend   = Math.round((portfolio.cashReserve * 0.25) * 100) / 100;
+    const costPerLot = Math.round((price * lotSize * (1 + strat.slippage)) * 100) / 100;
     const spend      = Math.min(costPerLot, maxSpend);
     const actualQty  = spend / (price * (1 + strat.slippage));
 
-    if (portfolio.cashReserve - spend < 0) return; // no overdraft
-
-    portfolio.cashReserve -= spend;
-    portfolio.lockedCash   += price * actualQty;
+    if (portfolio.cashReserve - spend < 0) return;
+    // Round down all cash math to 2 decimals
+    portfolio.cashReserve = Math.round((portfolio.cashReserve - spend) * 100) / 100;
+    // No locked cash update on buy
     holding.amount         += actualQty;
     strat.grid.push({ price, amount: actualQty, time: Date.now() });
     portfolio.buysToday++;
-    console.log(`🟢 [${strat.module.name}] BUY ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}`);
+    console.log(`🟢 [${symbol}-->${strat.module.name}] BUY ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}`);
   } else if (action === 'SELL') {
     const lot      = strat.grid.shift();
     if (!lot) return;
     const qty      = lot.amount;
-    const proceeds = price * qty * (1 - strat.slippage);
+    const proceeds = Math.round((price * qty * (1 - strat.slippage)) * 100) / 100;
 
-    portfolio.cashReserve += proceeds;
-    portfolio.lockedCash  -= lot.price * qty;
+    portfolio.cashReserve = Math.round((portfolio.cashReserve + proceeds) * 100) / 100;
+    // Lock a percent of the profit if positive
+    const profit = Math.round((proceeds - (lot.price * qty)) * 100) / 100;
+    let lockedAmount = 0;
+    if (profit > 0) {
+      lockedAmount = Math.round((profit * LOCKED_CASH_FRAC) * 100) / 100;
+      portfolio.lockedCash = Math.round((portfolio.lockedCash + lockedAmount) * 100) / 100;
+    }
     holding.amount        -= qty;
     holding.costBasis     = strat.grid.length
-                          ? strat.grid[strategies[symbol].grid.length-1].price
+                          ? strat.grid[strat.grid.length-1].price
                           : holding.costBasis;
 
-    const pnl = proceeds - (lot.price * qty);
-    portfolio.dailyProfitTotal += pnl;
+    portfolio.dailyProfitTotal = Math.round((portfolio.dailyProfitTotal + profit) * 100) / 100;
     portfolio.sellsToday++;
-    console.log(`🔴 [${strat.module.name}] SELL ${qty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}  P/L $${pnl.toFixed(6)}`);
+    console.log(`🔴 [${symbol}-->${strat.module.name}] SELL ${qty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}  P/L $${profit.toFixed(2)}  Locked: $${lockedAmount.toFixed(2)}`);
   }
 }
 
@@ -431,6 +419,7 @@ async function runStrategyForSymbol(symbol) {
   const holding = portfolio.cryptos[symbol];
   const strat   = strategies[symbol];
 
+  // Show trend, price etc. for debugging
   console.log(`→ ${symbol}: price=${info.price.toFixed(config.priceDecimalPlaces)}, trend=[${strat.trendHistory.join(',')}]`);
   if (!firstCycleDone) return;
 
@@ -445,52 +434,50 @@ async function runStrategyForSymbol(symbol) {
 
   let action = (decision.action || decision.side || '').toString().toUpperCase();
 
-  // ─── BUY ───────────────────────────────────────────────────────────
+  // BUY
   if (action === 'BUY') {
-    // peak confirmation
     const th     = strat.trendHistory;
     const peakOK = !config.enablePeakFilter
                 || (th.length === 3 && th[0]==='down' && th[1]==='down' && th[2]==='up');
 
-    // cap logic: do not enforce caps in TEST_MODE; enforce only in LIVE if limitBuysSells
     const capBuys = config.testMode
                   ? true
                   : (config.limitBuysSells ? portfolio.buysToday < MAX_TEST_BUYS : true);
 
     if (!peakOK) {
-      console.log(`⚠️ [${selectedStrategy.name}] BUY skipped: peak-confirmation not met`);
+      console.log(`⚠️ [${symbol}-->${selectedStrategy.name}] BUY skipped: peak-confirmation not met`);
     } else if (strat.grid.length >= config.gridLevels) {
-      console.log(`⚠️ [${selectedStrategy.name}] BUY skipped: grid at max levels (${config.gridLevels})`);
+      console.log(`⚠️ [${symbol}-->${selectedStrategy.name}] BUY skipped: grid at max levels (${config.gridLevels})`);
     } else if (!capBuys) {
-      console.log(`⚠️ [${selectedStrategy.name}] BUY skipped: reached buy cap (${MAX_TEST_BUYS})`);
+      console.log(`⚠️ [${symbol}-->${selectedStrategy.name}] BUY skipped: reached buy cap (${MAX_TEST_BUYS})`);
     } else {
       if (config.testMode) {
-        console.log(`🟡 [SIM] [${selectedStrategy.name}] BUY ${holding.amount.toFixed(6)} ${symbol} @ $${info.price.toFixed(6)}`);
+        console.log(`🟡 [SIM] [${symbol}-->${selectedStrategy.name}] BUY ${holding.amount.toFixed(6)} ${symbol} @ $${info.price.toFixed(6)}`);
       }
       executeTrade(symbol, 'BUY', info.price);
     }
   }
-
-  // ─── SELL ──────────────────────────────────────────────────────────
+  // SELL
   else if (action === 'SELL') {
     const costBase = holding.costBasis;
     const netPrice = info.price * (1 - strat.slippage);
     const delta    = (netPrice - costBase) / costBase;
 
-    // cap logic: do not enforce caps in TEST_MODE; enforce only in LIVE if limitBuysSells
     const capSells = config.testMode
                    ? true
                    : (config.limitBuysSells ? portfolio.sellsToday < MAX_TEST_SELLS : true);
 
     if (delta < config.baseSellThreshold) {
-      console.log(`⚠️ [${selectedStrategy.name}] SELL skipped: Δ ${(delta*100).toFixed(2)}% < ${(config.baseSellThreshold*100).toFixed(2)}%`);
+      console.log(`⚠️ [${symbol}-->${selectedStrategy.name}] SELL skipped: Δ ${(delta*100).toFixed(2)}% < ${(config.baseSellThreshold*100).toFixed(2)}%`);
     } else if (!capSells) {
-      console.log(`⚠️ [${selectedStrategy.name}] SELL skipped: reached sell cap (${MAX_TEST_SELLS})`);
+      console.log(`⚠️ [${symbol}-->${selectedStrategy.name}] SELL skipped: reached sell cap (${MAX_TEST_SELLS})`);
     } else {
       if (config.testMode) {
         // use the first lot's amount as the qty
         const lot = strat.grid[0];
-        console.log(`🟡 [SIM] [${selectedStrategy.name}] SELL ${lot.amount.toFixed(6)} ${symbol} @ $${info.price.toFixed(6)}`);
+        if (lot) {
+          console.log(`🟡 [SIM] [${symbol}-->${selectedStrategy.name}] SELL ${lot.amount.toFixed(6)} ${symbol} @ $${info.price.toFixed(6)}`);
+        }
       }
       executeTrade(symbol, 'SELL', info.price);
     }
@@ -498,20 +485,15 @@ async function runStrategyForSymbol(symbol) {
 }
 
 // ==============================================
-// Final Summary on CTRL+C
+// Final Summary on CTRL+C (with defensive math)
 // ==============================================
 async function printFinalSummary() {
-  let finalCrypto = 0;
-  for (const sym of Object.keys(portfolio.cryptos)) {
-    const info = await getPrice(sym);
-    if (info) finalCrypto += info.price * portfolio.cryptos[sym].amount;
-  }
-  const endValue = portfolio.cashReserve + portfolio.lockedCash + finalCrypto;
-  const startVal = portfolio.beginningPortfolioValue || 0;
-  const profit   = endValue - startVal;
-  const minutes  = Math.floor((Date.now() - portfolio.startTime)/60000);
+  const finalCrypto = await computePortfolioCryptoValue();
+  const endValue   = Math.round((portfolio.cashReserve + portfolio.lockedCash + finalCrypto) * 100) / 100;
+  const startVal   = Number(portfolio.beginningPortfolioValue) || 0;
+  const profit     = Math.round((endValue - startVal) * 100) / 100;
+  const minutes    = Math.floor((Date.now() - portfolio.startTime)/60000);
 
-  // Same conditional logic here
   const finalBuys = config.testMode
     ? `${portfolio.buysToday}`
     : `${portfolio.buysToday}/${config.limitBuysSells ? MAX_TEST_BUYS : '∞'}`;
@@ -520,15 +502,17 @@ async function printFinalSummary() {
     ? `${portfolio.sellsToday}`
     : `${portfolio.sellsToday}/${config.limitBuysSells ? MAX_TEST_SELLS : '∞'}`;
 
+  const safe = n => (isFinite(n) ? Number(n).toFixed(2) : "0.00");
+
   console.log('\n=== TOTAL PORTFOLIO SUMMARY ===');
-  console.log(`Beginning Portfolio Value: $${startVal.toLocaleString()}`);
+  console.log(`Beginning Portfolio Value: $${safe(startVal)}`);
   console.log(`Duration: ${minutes} min`);
   console.log(`Buys:     ${finalBuys}`);
   console.log(`Sells:    ${finalSells}`);
-  console.log(`Total P/L:   $${profit.toLocaleString()}`);
-  console.log(`Cash:        $${portfolio.cashReserve.toLocaleString()}`);
-  console.log(`Crypto (mkt):$${finalCrypto.toLocaleString()}`);
-  console.log(`Locked:      $${portfolio.lockedCash.toLocaleString()}`);
+  console.log(`Total P/L:   $${safe(profit)}`);
+  console.log(`Cash:        $${safe(portfolio.cashReserve)}`);
+  console.log(`Crypto (mkt):$${safe(finalCrypto)}`);
+  console.log(`Locked:      $${safe(portfolio.lockedCash)}`);
   console.log('=============================\n');
 }
 
@@ -540,8 +524,9 @@ async function printFinalSummary() {
 
   // Fetch or skip BP
   if (!config.demoMode && !config.testMode) {
-    const bp = await fetchCryptoBuyingPower();
-    if (bp!=null) portfolio.cashReserve = bp;
+    // TODO: Add live BP fetch logic here if needed.
+    // const bp = await fetchCryptoBuyingPower();
+    // if (bp!=null) portfolio.cashReserve = bp;
   } else {
     console.log('🧪 TEST_MODE: skipping BP fetch');
   }
@@ -565,8 +550,9 @@ async function printFinalSummary() {
     if (info) initCrypto += info.price * portfolio.cryptos[sym].amount;
   }
   portfolio.initialCryptoValue      = initCrypto;
-  portfolio.beginningPortfolioValue = config.initialBalance + initCrypto;
-  console.log(`\n=== STARTUP SUMMARY ===\nBeginning Portfolio Value: $${portfolio.beginningPortfolioValue.toLocaleString()}`);
+  portfolio.beginningPortfolioValue = Math.round((config.initialBalance + initCrypto) * 100) / 100;
+  portfolio.startingPortfolioValue = portfolio.beginningPortfolioValue;
+  console.log(`\n=== STARTUP SUMMARY ===\nBeginning Portfolio Value: $${portfolio.beginningPortfolioValue}`);
 
   // Ctrl handlers
   readline.emitKeypressEvents(process.stdin);

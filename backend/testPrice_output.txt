@@ -1,0 +1,98 @@
+
+=== Running in LIVE mode ===
+🧪 TEST_MODE: trades simulated (capped)
+Peak-confirmation on BUY is DISABLED
+Press CTRL+S for Status, CTRL+G for Grid, CTRL+C to exit
+
+
+📌 Available Strategies:
+ [1] Dynamic Regime Switching (1.0) - Auto-switches between DCA, Grid/Mean Reversion, and Accumulate based on market regime.
+ [2] Moderate Retain Mode (v1.1) - Grid strategy with moderate profit locking and cash reserve using config thresholds.
+ [3] Moderate Retain Mode (2.1) - Grid-based trading with ATR-driven thresholds, 3-tick confirmations, and weighted grid entries
+ [4] Moderate Retain Mode (3.0) - ATR-fallback thresholds, 2-of-3 tick confirmations, 3 grid levels, 7-period ATR lookback
+ [5] Moderate Retain Mode (4.0) - Grid-based trading with ATR thresholds, 2-of-3 confirmations, weighted grid entries, plus 24h-average pullback buys (–10%) and flat profit sells (+5%).
+ [6] Simple Buy Low/Sell High (1.1) - Buys when price dips below costBasis by baseBuyThreshold; sells when price rises above costBasis by baseSellThreshold; straightforward cost-basis gating.
+[1G[0J
+Select strategy [default 1]: [30G1
+🧪 TEST_MODE: skipping BP fetch
+
+Current Holdings:
+┌────┬───────────┬──────────────────┬─────────────────┬───────────────┐
+│ No │  Symbol   │     Quantity     │      Price      │   CostBasis   │
+├────┼───────────┼──────────────────┼─────────────────┼───────────────┤
+│ 1  │ BTCUSD    │ 0.039695         │ 117435.99242720 │ 109044.825124 │
+│ 2  │ BONKUSD   │ 106092858.000000 │ 0.00002557      │ 0.000022      │
+│ 3  │ ETHUSD    │ 0.719539         │ 2948.45709326   │ 2560.669889   │
+│ 4  │ XLMUSD    │ 3922.680000      │ 0.39679443      │ 0.288164      │
+│ 5  │ POPCATUSD │ 2208.580000      │ 0.36138000      │ 0.490673      │
+│ 6  │ PEPEUSD   │ 81263652.000000  │ 0.00001224      │ 0.000014      │
+│ 7  │ XRPUSD    │ 174.409000       │ 2.74358435      │ 2.348464      │
+│ 8  │ TRUMPUSD  │ 26.144900        │ 9.60815015      │ 13.023589     │
+│ 9  │ ADAUSD    │ 86.160000        │ 0.70895210      │ 0.758283      │
+│ 10 │ SOLUSD    │ 0.260140         │ 161.12537086    │ 176.953394    │
+│ 11 │ LTCUSD    │ 0.406823         │ 93.00624835     │ 96.400777     │
+│ 12 │ DOGEUSD   │ 87.690905        │ 0.19794175      │ 0.227930      │
+│ 13 │ SHIBUSD   │ 997179.420000    │ 0.00001316      │ 0.000014      │
+│ 14 │ LINKUSD   │ 0.438797         │ 15.09957228     │ 15.586097     │
+│ 15 │ AVAXUSD   │ 0.047000         │ 20.94220965     │ 23.080420     │
+│ 16 │ COMPUSD   │ 0.019044         │ 46.37049993     │ 42.853640     │
+└────┴───────────┴──────────────────┴─────────────────┴───────────────┘
+
+=== STARTUP SUMMARY ===
+Beginning Portfolio Value: $13775.34
+🔄 Seeding initial cycle (no trades)...
+→ BONKUSD: price=0.00002558, trend=[neutral,up,up]
+→ XLMUSD: price=0.39680130, trend=[neutral,up,down]
+→ DOGEUSD: price=0.19795490, trend=[neutral,up,down]
+→ XRPUSD: price=2.74364660, trend=[neutral,up,up]
+→ COMPUSD: price=46.37005504, trend=[neutral,down,neutral]
+→ POPCATUSD: price=0.36140712, trend=[neutral,up,down]
+→ ADAUSD: price=0.70902925, trend=[neutral,up,neutral]
+→ AVAXUSD: price=20.94275985, trend=[neutral,up,neutral]
+→ PEPEUSD: price=0.00001225, trend=[neutral,up,neutral]
+→ LINKUSD: price=15.09957196, trend=[neutral,down,neutral]
+→ SOLUSD: price=161.12623884, trend=[neutral,up,down]
+→ LTCUSD: price=93.00624835, trend=[neutral,neutral,neutral]
+→ SHIBUSD: price=0.00001316, trend=[neutral,neutral,neutral]
+→ TRUMPUSD: price=9.60823910, trend=[neutral,up,neutral]
+→ ETHUSD: price=2948.46212827, trend=[neutral,neutral,up]
+→ BTCUSD: price=117435.99242720, trend=[neutral,neutral,neutral]
+✅ Initial cycle complete — trading now enabled.
+→ BTCUSD: price=117433.12620858, trend=[neutral,neutral,down]
+🟡 [SIM] [BTCUSD-->Dynamic Regime Switching] BUY 0.039695 BTCUSD @ $117433.126209
+🟢 [BTCUSD-->Dynamic Regime Switching] BUY 0.000042 BTCUSD @ $117433.126209
+→ BONKUSD: price=0.00002556, trend=[up,up,down]
+🟡 [SIM] [BONKUSD-->Dynamic Regime Switching] BUY 106092858.000000 BONKUSD @ $0.000026
+🟢 [BONKUSD-->Dynamic Regime Switching] BUY 143836.877474 BONKUSD @ $0.000026
+→ ETHUSD: price=2948.27105748, trend=[neutral,up,down]
+🟡 [SIM] [ETHUSD-->Dynamic Regime Switching] BUY 0.719539 ETHUSD @ $2948.271057
+🟢 [ETHUSD-->Dynamic Regime Switching] BUY 0.000934 ETHUSD @ $2948.271057
+→ XLMUSD: price=0.39690565, trend=[up,down,up]
+🟡 [SIM] [XLMUSD-->Dynamic Regime Switching] BUY 3922.680000 XLMUSD @ $0.396906
+🟢 [XLMUSD-->Dynamic Regime Switching] BUY 5.211887 XLMUSD @ $0.396906
+→ POPCATUSD: price=0.36175264, trend=[up,down,up]
+→ PEPEUSD: price=0.00001224, trend=[up,neutral,down]
+→ XRPUSD: price=2.74241168, trend=[up,up,down]
+🟡 [SIM] [XRPUSD-->Dynamic Regime Switching] BUY 174.409000 XRPUSD @ $2.742412
+🟢 [XRPUSD-->Dynamic Regime Switching] BUY 0.564838 XRPUSD @ $2.742412
+→ TRUMPUSD: price=9.60898970, trend=[up,neutral,up]
+→ ADAUSD: price=0.70880070, trend=[up,neutral,down]
+→ SOLUSD: price=161.10135984, trend=[up,down,down]
+→ LTCUSD: price=93.00504250, trend=[neutral,neutral,down]
+→ DOGEUSD: price=0.19793846, trend=[up,down,down]
+→ SHIBUSD: price=0.00001316, trend=[neutral,neutral,neutral]
+→ LINKUSD: price=15.09774763, trend=[down,neutral,down]
+→ AVAXUSD: price=20.94545990, trend=[up,neutral,up]
+→ COMPUSD: price=46.36953273, trend=[down,neutral,down]
+🟡 [SIM] [COMPUSD-->Dynamic Regime Switching] BUY 0.019044 COMPUSD @ $46.369533
+🟢 [COMPUSD-->Dynamic Regime Switching] BUY 0.019029 COMPUSD @ $46.369533
+
+=== REALIZED P/L STATUS ===
+Buys:     6
+Sells:    0
+StopLoss: 0
+Realized Profit:   $0.00 (avg $N/A)
+Unrealized P/L:   $-1.18
+Cash: $3.85, Crypto: $13770.31, Locked: $0.00
+
+=== TOTAL PORTFOLIO SUMMARY ===

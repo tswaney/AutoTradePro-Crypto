@@ -1,5 +1,6 @@
 .env
 node_modules/
+Archive/
 
 # Private crypto key
 backend/private.pem
