@@ -75,7 +75,7 @@ const config = {
   baseBuyThreshold:   -(SIMPLE_BUY_THRESHOLD  / 100),
   baseSellThreshold:   SIMPLE_SELL_THRESHOLD / 100,
   atrLookbackPeriod:   14,
-  gridLevels:          100,
+  gridLevels:          10,
   defaultSlippage:     DEFAULT_SLIPPAGE_FRAC,
   priceDecimalPlaces:  8,
   buyLimit:            Infinity,
@@ -376,7 +376,10 @@ function executeTrade(symbol, action, price) {
     const spend      = Math.min(costPerLot, maxSpend);
     const actualQty  = spend / (price * (1 + strat.slippage));
 
-    if (portfolio.cashReserve - spend < 0) return;
+    if (spend < 0.01 || portfolio.cashReserve - spend < 0) {
+      console.log(`⚠️  [${symbol}] BUY skipped: insufficient cashReserve ($${portfolio.cashReserve.toFixed(2)})}`);
+      return;
+    }
     // Round down all cash math to 2 decimals
     portfolio.cashReserve = Math.round((portfolio.cashReserve - spend) * 100) / 100;
     // No locked cash update on buy
@@ -384,6 +387,7 @@ function executeTrade(symbol, action, price) {
     strat.grid.push({ price, amount: actualQty, time: Date.now() });
     portfolio.buysToday++;
     console.log(`🟢 [${symbol}-->${strat.module.name}] BUY ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}`);
+    console.log(`[${symbol}] After buy, cashReserve: $${portfolio.cashReserve.toFixed(2)}`);
   } else if (action === 'SELL') {
     const lot      = strat.grid.shift();
     if (!lot) return;

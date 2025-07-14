@@ -55,23 +55,29 @@ module.exports = {
 
     // --- DCA (Uptrend) ---
     if (regime === "uptrend") {
-      // DCA Buy: buy if at least 1% above cost basis, no SELLs
+      // Buy if at least 1% above cost basis
       if (price > costBasis * 1.01)
         return { action: "BUY", regime: "uptrend" };
+      // Sell if at least 3% above cost basis
+      if (price > costBasis * 1.03)
+        return { action: "SELL", regime: "uptrend" };
     }
 
     // --- Accumulate (Downtrend) ---
     if (regime === "downtrend") {
-      // Only buy, and only if price is at least 2% below last price (DCA/add more)
+      // Buy more if 2% below last price
       if (lastPrice && price < lastPrice * 0.98)
         return { action: "BUY", regime: "downtrend" };
+      // Sell if price recovers 1% above cost basis
+      if (price > costBasis * 1.01)
+        return { action: "SELL", regime: "downtrend" };
     }
 
     // --- Mean Reversion/Grid (Rangebound) ---
     if (regime === "rangebound") {
       const sma = this.sma(strategyState.priceHistory, 50);
       if (!sma) return null;
-      // If price 2% below mean, BUY; 2% above mean, SELL
+      // Buy if 2% below mean; Sell if 2% above mean
       if (price < sma * 0.98)
         return { action: "BUY", regime: "rangebound" };
       if (price > sma * 1.02)
