@@ -11,6 +11,7 @@ const logFilePath = pathLogger.join(__dirname, 'testPrice_output.txt');
 const logStream   = fsLogger.createWriteStream(logFilePath, { flags: 'w' });
 // Preventing trading until after seeding process is complete
 let tradingEnabled = false;
+let soldOutSymbols = new Set();
 
 const origStdout = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, encoding, callback) => {
@@ -406,6 +407,9 @@ function executeTrade(symbol, action, price) {
       portfolio.lockedCash = Math.round((portfolio.lockedCash + lockedAmount) * 100) / 100;
     }
     holding.amount        -= qty;
+    if (holding.amount < config.minTradeAmount) {
+      soldOutSymbols.add(symbol);
+    }
     holding.costBasis     = strat.grid.length
                           ? strat.grid[strat.grid.length-1].price
                           : holding.costBasis;
@@ -594,6 +598,33 @@ async function printFinalSummary() {
   console.log(`Crypto (mkt):$${safe(finalCrypto)}`);
   console.log(`Locked:      $${safe(portfolio.lockedCash)}`);
   console.log('=============================\n');
+
+  // === FINAL HOLDINGS SUMMARY ===
+  console.log('\n--- FINAL HOLDINGS (still owned) ---');
+  let hasHoldings = false;
+  Object.entries(portfolio.cryptos).forEach(([sym, data]) => {
+    const amount = Number(data.amount);
+    if (amount >= config.minTradeAmount) {
+      hasHoldings = true;
+      const lastPrice = strategies[sym]?.lastPrice || 0;
+      const val = amount * lastPrice;
+      console.log(`  ${sym}: ${amount.toFixed(6)} @ $${lastPrice.toFixed(6)} = $${val.toFixed(2)}`);
+    }
+  });
+  if (!hasHoldings) {
+    console.log('  (none)');
+  }
+
+  // === FULLY SOLD COINS (Sold Out) ===
+  console.log('\n--- FULLY SOLD COINS (completely sold this run) ---');
+  if (soldOutSymbols.size === 0) {
+    console.log('  (none)');
+  } else {
+    for (const sym of soldOutSymbols) {
+      const lastPrice = strategies[sym]?.lastPrice || 0;
+      console.log(`  ${sym} (last known price $${lastPrice.toFixed(6)})`);
+    }
+  }
 }
 
 // ==============================================
