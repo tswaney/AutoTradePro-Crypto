@@ -372,33 +372,32 @@ function executeTrade(symbol, action, price) {
   let lotSize = holding.grid[0].amount;
 
   if (action === 'BUY') {
-    // === Core Buy Logic ===
-    // [insert your buy math above: lot sizing, spend, cash update, etc.]
+    if (!config.testMode && lotSize > 0.10) lotSize = 0.10;
+    const maxSpend   = Math.round((portfolio.cashReserve * 0.25) * 100) / 100;
+    const costPerLot = Math.round((price * lotSize * (1 + strat.slippage)) * 100) / 100;
+    const spend      = Math.min(costPerLot, maxSpend);
+    const actualQty  = spend / (price * (1 + strat.slippage));
+
+    if (spend < 0.01 || portfolio.cashReserve - spend < 0) {
+      console.log(`⚠️  [${symbol}] BUY skipped: insufficient cashReserve ($${portfolio.cashReserve.toFixed(2)})}`);
+      return;
+    }
+    // Round down all cash math to 2 decimals
+    portfolio.cashReserve = Math.round((portfolio.cashReserve - spend) * 100) / 100;
+    // No locked cash update on buy
+    holding.amount         += actualQty;
     strat.grid.push({ price, amount: actualQty, time: Date.now() });
     portfolio.buysToday++;
-
-    // === Formatted Output ===
-    console.log(`🟢 BUY executed: ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(config.priceDecimalPlaces)}`);
-
-    // Print grid state after BUY, with numbered entries and human-readable times.
-    console.log(`\nAfter BUY ${symbol} grid:`);
-    if (strat.grid.length === 0) {
-      // If grid is empty, indicate so for clarity
-      console.log('  (empty)');
-    } else {
-      strat.grid.forEach((lot, i) =>
-        console.log(
-          `  [${i+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, ` +
-          `amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
-        )
-      );
-    }
+    console.log(`🟢 [${symbol}-->${strat.module.name}] BUY ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}`);
+    console.log(`[${symbol}] After buy, cashReserve: $${portfolio.cashReserve.toFixed(2)}`);
   } else if (action === 'SELL') {
-    const lot = strat.grid.shift();
+    const lot      = strat.grid.shift();
     if (!lot) return;
     const qty      = lot.amount;
     const proceeds = Math.round((price * qty * (1 - strat.slippage)) * 100) / 100;
+
     portfolio.cashReserve = Math.round((portfolio.cashReserve + proceeds) * 100) / 100;
+    // Lock a percent of the profit if positive
     const profit = Math.round((proceeds - (lot.price * qty)) * 100) / 100;
     let lockedAmount = 0;
     if (profit > 0) {
@@ -409,21 +408,10 @@ function executeTrade(symbol, action, price) {
     holding.costBasis     = strat.grid.length
                           ? strat.grid[strat.grid.length-1].price
                           : holding.costBasis;
+
     portfolio.dailyProfitTotal = Math.round((portfolio.dailyProfitTotal + profit) * 100) / 100;
     portfolio.sellsToday++;
-
-    // --- FORMATTED OUTPUT ---
-    console.log(`🔴 SELL executed: ${qty.toFixed(6)} ${symbol} @ $${price.toFixed(config.priceDecimalPlaces)} P/L $${profit.toFixed(2)}  Locked: $${lockedAmount.toFixed(2)}`);
-    console.log(`\nAfter SELL ${symbol} grid:`);
-    if (strat.grid.length === 0) {
-      console.log('  (empty)');
-    } else {
-      strat.grid.forEach((lot, i) =>
-        console.log(
-          `  [${i+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
-        )
-      );
-    }
+    console.log(`🔴 [${symbol}-->${strat.module.name}] SELL ${qty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}  P/L $${profit.toFixed(2)}  Locked: $${lockedAmount.toFixed(2)}`);
   }
 }
 
@@ -492,7 +480,7 @@ async function runStrategyForSymbol(symbol) {
 
   // --- BUY HANDLING ---
   if (action === 'BUY') {
-    // === Only use a small portion of cash per buy, but always enough for minimum trade ===
+    // Only use a *small portion* of available cash per buy (e.g., 10%), but at least enough for minTradeAmount
     const spend = Math.max(
       portfolio.cashReserve * 0.10,
       config.minTradeAmount * info.price
@@ -507,30 +495,14 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
 
-    // === Execute Buy: update holdings and cash, then add to grid ===
+    // Execute buy and push grid lot
     holding.amount += actualQty;
     portfolio.cashReserve = Math.round((portfolio.cashReserve - spend) * 100) / 100;
 
     strat.grid = strat.grid || [];
     strat.grid.push({ price: info.price, amount: actualQty, time: Date.now() });
-    portfolio.buysToday++;
-
-    // === Formatted Output ===
-    console.log(`🟢 BUY executed: ${actualQty.toFixed(6)} ${symbol} @ $${info.price.toFixed(config.priceDecimalPlaces)}`);
-
-    // Print grid state after BUY, with numbered entries and human-readable times.
-    console.log(`\nAfter BUY ${symbol} grid:`);
-    if (strat.grid.length === 0) {
-      // If grid is empty, indicate so for clarity
-      console.log('  (empty)');
-    } else {
-      strat.grid.forEach((lot, idx) =>
-        console.log(
-          `  [${idx+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, ` +
-          `amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
-        )
-      );
-    }
+    console.log(`After BUY, ${symbol} grid:`, JSON.stringify(strat.grid));
+    console.log(`After BUY, ${symbol} cashReserve: $${portfolio.cashReserve.toFixed(2)}`);
     return;
   }
 
@@ -543,20 +515,9 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
     // Log before executing sell
-    // REMOVE this line: console.log(`📉 SELL executed for ...`)
+    console.log(`📉 SELL executed for ${symbol}: lot=`, JSON.stringify(lot), 'grid=', JSON.stringify(strat.grid));
     executeTrade(symbol, 'SELL', info.price);
-
-    // --- FORMATTED GRID OUTPUT ---
-    console.log(`\nAfter SELL ${symbol} grid:`);
-    if (strat.grid.length === 0) {
-      console.log('  (empty)');
-    } else {
-      strat.grid.forEach((lot, idx) =>
-        console.log(
-          `  [${idx+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
-        )
-      );
-    }
+    console.log(`After SELL, ${symbol} grid:`, JSON.stringify(strat.grid));
     return;
   }
 

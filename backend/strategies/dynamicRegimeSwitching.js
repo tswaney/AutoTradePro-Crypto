@@ -49,41 +49,51 @@ module.exports = {
     return "rangebound";
   },
 
-  // --- Trade Logic for Each Regime ---
-  getTradeDecision({ price, lastPrice, costBasis, strategyState, config }) {
+  // --- Core Trading Logic ---
+  getTradeDecision({ symbol, price, lastPrice, costBasis, strategyState, config }) {
     const regime = this.detectRegime(strategyState, config);
+    const grid = strategyState.grid || [];
+    const sellThreshold = 0.01; // 1% above grid buy price
+
+    // --- PATCH: Only sell if price is at least 1% above grid entry price ---
+    if (grid && grid.length > 0) {
+      const lot = grid[0];
+      if (lot && lot.amount > 0 && price >= lot.price * (1 + sellThreshold)) {
+        if (process.env.DEBUG) {
+          console.log(`[DEBUG][${symbol}] Grid SELL: price $${price} > grid entry $${lot.price} (+${sellThreshold*100}%)`);
+        }
+        return {
+          action: "SELL",
+          price: price,
+          amount: lot.amount,
+          reason: `Grid SELL: price $${price} > grid entry $${lot.price} +${sellThreshold*100}%`
+        };
+      }
+    }
 
     // --- DCA (Uptrend) ---
     if (regime === "uptrend") {
-      // Buy if at least 1% above cost basis
       if (price > costBasis * 1.01)
-        return { action: "BUY", regime: "uptrend" };
-      // Sell if at least 3% above cost basis
-      if (price > costBasis * 1.03)
-        return { action: "SELL", regime: "uptrend" };
+        return { action: "BUY", regime: "uptrend", reason: "Uptrend buy trigger" };
     }
 
     // --- Accumulate (Downtrend) ---
     if (regime === "downtrend") {
-      // Buy more if 2% below last price
       if (lastPrice && price < lastPrice * 0.98)
-        return { action: "BUY", regime: "downtrend" };
-      // Sell if price recovers 1% above cost basis
-      if (price > costBasis * 1.01)
-        return { action: "SELL", regime: "downtrend" };
+        return { action: "BUY", regime: "downtrend", reason: "Downtrend buy trigger" };
     }
 
     // --- Mean Reversion/Grid (Rangebound) ---
     if (regime === "rangebound") {
       const sma = this.sma(strategyState.priceHistory, 50);
-      if (!sma) return null;
-      // Buy if 2% below mean; Sell if 2% above mean
-      if (price < sma * 0.98)
-        return { action: "BUY", regime: "rangebound" };
-      if (price > sma * 1.02)
-        return { action: "SELL", regime: "rangebound" };
+      if (sma && price < sma * 0.98)
+        return { action: "BUY", regime: "rangebound", reason: "Rangebound buy trigger" };
     }
 
+    // --- HOLD: No trigger met ---
+    if (process.env.DEBUG) {
+      console.log(`[DEBUG][${symbol}] No trade trigger at $${price}`);
+    }
     return null;
   },
 
