@@ -186,10 +186,68 @@ function loadHoldings() {
     }
   }
 }
-function seedStrategyGrids() {
+
+/**
+ * Standardized grid and price/trend seeding for all strategies.
+ * Must be called inside an async context.
+ */
+async function seedStrategyGrids() {
   Object.keys(portfolio.cryptos).forEach(sym => {
-    strategies[sym].grid = [...portfolio.cryptos[sym].grid];
+    strategies[sym].grid = [...(portfolio.cryptos[sym].grid || [])];
   });
+
+  const seedHistoryLength = Math.max(
+    config.atrLookbackPeriod || 14,
+    50
+  );
+
+  await Promise.all(Object.keys(portfolio.cryptos).map(async (sym) => {
+    const strat = strategies[sym];
+
+    // Initialize state arrays if needed
+    strat.priceHistory = strat.priceHistory || [];
+    strat.trendHistory = strat.trendHistory || [];
+    strat.grid = strat.grid || [];
+
+    // If we already have holdings for this symbol, seed the grid and costBasis
+    const holding = portfolio.cryptos[sym];
+    if (holding && holding.amount >= config.minTradeAmount) {
+      if (strat.grid.length === 0) {
+        strat.grid.push({
+          price: holding.costBasis,
+          amount: holding.amount,
+          time: Date.now() - seedHistoryLength * config.checkInterval,
+        });
+      }
+      holding.costBasis = holding.costBasis || strat.grid[0].price;
+    }
+
+    // Seed the priceHistory (simulate past prices)
+    let lastPrice = null;
+    for (let i = seedHistoryLength; i > 0; i--) {
+      const { price } = await getPrice(sym);
+      strat.priceHistory.push(price);
+      lastPrice = price;
+      // Optionally, seed trendHistory for confirmation-based strategies
+      if (strat.priceHistory.length > 1) {
+        const prev = strat.priceHistory[strat.priceHistory.length - 2];
+        strat.trendHistory.push(
+          price > prev ? "up" : price < prev ? "down" : "neutral"
+        );
+      }
+    }
+    strat.lastPrice = lastPrice;
+
+    // Now run updateStrategyState so derived fields (ATR, etc.) are initialized
+    if (typeof strat.module.updateStrategyState === "function") {
+      strat.module.updateStrategyState(sym, strat, config);
+    }
+
+    // Print seeding summary for debug
+    console.log(
+      `[SEED] ${sym} seeded with priceHistory=${strat.priceHistory.length}, trendHistory=${strat.trendHistory.length}, grid=${JSON.stringify(strat.grid)}, costBasis=${holding.costBasis}`
+    );
+  }));
 }
 
 // ==============================================
@@ -471,23 +529,28 @@ async function runStrategyForSymbol(symbol) {
 
   // --- STRATEGY DECISION ---
   let action = null;
+  let decision = null;
   if (strat.module && typeof strat.module.getTradeDecision === 'function') {
-    const decision = strat.module.getTradeDecision({
+    decision = strat.module.getTradeDecision({
+      symbol,
       price: info.price,
       lastPrice: strat.priceHistory.length >= 2 ? strat.priceHistory[strat.priceHistory.length - 2] : null,
       costBasis: holding.costBasis,
       strategyState,
       config
     });
-    action = decision && decision.action ? decision.action.toUpperCase() : null;
-    if (action) {
+    if (decision && decision.action) {
+      action = decision.action.toUpperCase();
       console.log(`📈 Strategy decision for ${symbol}: ${action} @ $${info.price.toFixed(8)}`);
+    } else {
+      // Even if no buy/sell, always log a HOLD decision for traceability
+      console.log(`💤 Strategy decision for ${symbol}: HOLD @ $${info.price.toFixed(8)}`);
     }
   }
 
   // --- GUARD: Block trading if not enabled (during seeding) ---
   if (typeof tradingEnabled !== "undefined" && !tradingEnabled) {
-    // Optionally: log that trade is skipped during seeding
+    // Optionally: log that trade is skipped during seeding (always prints HOLD if null)
     if (action) {
       console.log(`💤 Trade skipped for ${symbol} during seeding: ${action}`);
     }
@@ -546,8 +609,6 @@ async function runStrategyForSymbol(symbol) {
       console.log(`❌ SELL skipped for ${symbol}: grid empty or lot amount <= 0; grid=`, JSON.stringify(strat.grid));
       return;
     }
-    // Log before executing sell
-    // REMOVE this line: console.log(`📉 SELL executed for ...`)
     executeTrade(symbol, 'SELL', info.price);
 
     // --- FORMATTED GRID OUTPUT ---
@@ -564,7 +625,7 @@ async function runStrategyForSymbol(symbol) {
     return;
   }
 
-  // No trade
+  // No trade, already logged as HOLD above
   return;
 }
 
