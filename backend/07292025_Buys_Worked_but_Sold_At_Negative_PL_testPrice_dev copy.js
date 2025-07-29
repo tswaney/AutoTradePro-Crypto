@@ -11,6 +11,7 @@ const logFilePath = pathLogger.join(__dirname, 'testPrice_output.txt');
 const logStream   = fsLogger.createWriteStream(logFilePath, { flags: 'w' });
 // Preventing trading until after seeding process is complete
 let tradingEnabled = false;
+let soldOutSymbols = new Set();
 
 const origStdout = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, encoding, callback) => {
@@ -185,10 +186,68 @@ function loadHoldings() {
     }
   }
 }
-function seedStrategyGrids() {
+
+/**
+ * Standardized grid and price/trend seeding for all strategies.
+ * Must be called inside an async context.
+ */
+async function seedStrategyGrids() {
   Object.keys(portfolio.cryptos).forEach(sym => {
-    strategies[sym].grid = [...portfolio.cryptos[sym].grid];
+    strategies[sym].grid = [...(portfolio.cryptos[sym].grid || [])];
   });
+
+  const seedHistoryLength = Math.max(
+    config.atrLookbackPeriod || 14,
+    50
+  );
+
+  await Promise.all(Object.keys(portfolio.cryptos).map(async (sym) => {
+    const strat = strategies[sym];
+
+    // Initialize state arrays if needed
+    strat.priceHistory = strat.priceHistory || [];
+    strat.trendHistory = strat.trendHistory || [];
+    strat.grid = strat.grid || [];
+
+    // If we already have holdings for this symbol, seed the grid and costBasis
+    const holding = portfolio.cryptos[sym];
+    if (holding && holding.amount >= config.minTradeAmount) {
+      if (strat.grid.length === 0) {
+        strat.grid.push({
+          price: holding.costBasis,
+          amount: holding.amount,
+          time: Date.now() - seedHistoryLength * config.checkInterval,
+        });
+      }
+      holding.costBasis = holding.costBasis || strat.grid[0].price;
+    }
+
+    // Seed the priceHistory (simulate past prices)
+    let lastPrice = null;
+    for (let i = seedHistoryLength; i > 0; i--) {
+      const { price } = await getPrice(sym);
+      strat.priceHistory.push(price);
+      lastPrice = price;
+      // Optionally, seed trendHistory for confirmation-based strategies
+      if (strat.priceHistory.length > 1) {
+        const prev = strat.priceHistory[strat.priceHistory.length - 2];
+        strat.trendHistory.push(
+          price > prev ? "up" : price < prev ? "down" : "neutral"
+        );
+      }
+    }
+    strat.lastPrice = lastPrice;
+
+    // Now run updateStrategyState so derived fields (ATR, etc.) are initialized
+    if (typeof strat.module.updateStrategyState === "function") {
+      strat.module.updateStrategyState(sym, strat, config);
+    }
+
+    // Print seeding summary for debug
+    console.log(
+      `[SEED] ${sym} seeded with priceHistory=${strat.priceHistory.length}, trendHistory=${strat.trendHistory.length}, grid=${JSON.stringify(strat.grid)}, costBasis=${holding.costBasis}`
+    );
+  }));
 }
 
 // ==============================================
@@ -372,32 +431,33 @@ function executeTrade(symbol, action, price) {
   let lotSize = holding.grid[0].amount;
 
   if (action === 'BUY') {
-    if (!config.testMode && lotSize > 0.10) lotSize = 0.10;
-    const maxSpend   = Math.round((portfolio.cashReserve * 0.25) * 100) / 100;
-    const costPerLot = Math.round((price * lotSize * (1 + strat.slippage)) * 100) / 100;
-    const spend      = Math.min(costPerLot, maxSpend);
-    const actualQty  = spend / (price * (1 + strat.slippage));
-
-    if (spend < 0.01 || portfolio.cashReserve - spend < 0) {
-      console.log(`⚠️  [${symbol}] BUY skipped: insufficient cashReserve ($${portfolio.cashReserve.toFixed(2)})}`);
-      return;
-    }
-    // Round down all cash math to 2 decimals
-    portfolio.cashReserve = Math.round((portfolio.cashReserve - spend) * 100) / 100;
-    // No locked cash update on buy
-    holding.amount         += actualQty;
+    // === Core Buy Logic ===
+    // [insert your buy math above: lot sizing, spend, cash update, etc.]
     strat.grid.push({ price, amount: actualQty, time: Date.now() });
     portfolio.buysToday++;
-    console.log(`🟢 [${symbol}-->${strat.module.name}] BUY ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}`);
-    console.log(`[${symbol}] After buy, cashReserve: $${portfolio.cashReserve.toFixed(2)}`);
+
+    // === Formatted Output ===
+    console.log(`🟢 BUY executed: ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(config.priceDecimalPlaces)}`);
+
+    // Print grid state after BUY, with numbered entries and human-readable times.
+    console.log(`\nAfter BUY ${symbol} grid:`);
+    if (strat.grid.length === 0) {
+      // If grid is empty, indicate so for clarity
+      console.log('  (empty)');
+    } else {
+      strat.grid.forEach((lot, i) =>
+        console.log(
+          `  [${i+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, ` +
+          `amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
+        )
+      );
+    }
   } else if (action === 'SELL') {
-    const lot      = strat.grid.shift();
+    const lot = strat.grid.shift();
     if (!lot) return;
     const qty      = lot.amount;
     const proceeds = Math.round((price * qty * (1 - strat.slippage)) * 100) / 100;
-
     portfolio.cashReserve = Math.round((portfolio.cashReserve + proceeds) * 100) / 100;
-    // Lock a percent of the profit if positive
     const profit = Math.round((proceeds - (lot.price * qty)) * 100) / 100;
     let lockedAmount = 0;
     if (profit > 0) {
@@ -405,13 +465,27 @@ function executeTrade(symbol, action, price) {
       portfolio.lockedCash = Math.round((portfolio.lockedCash + lockedAmount) * 100) / 100;
     }
     holding.amount        -= qty;
+    if (holding.amount < config.minTradeAmount) {
+      soldOutSymbols.add(symbol);
+    }
     holding.costBasis     = strat.grid.length
                           ? strat.grid[strat.grid.length-1].price
                           : holding.costBasis;
-
     portfolio.dailyProfitTotal = Math.round((portfolio.dailyProfitTotal + profit) * 100) / 100;
     portfolio.sellsToday++;
-    console.log(`🔴 [${symbol}-->${strat.module.name}] SELL ${qty.toFixed(6)} ${symbol} @ $${price.toFixed(6)}  P/L $${profit.toFixed(2)}  Locked: $${lockedAmount.toFixed(2)}`);
+
+    // --- FORMATTED OUTPUT ---
+    console.log(`🔴 SELL executed: ${qty.toFixed(6)} ${symbol} @ $${price.toFixed(config.priceDecimalPlaces)} P/L $${profit.toFixed(2)}  Locked: $${lockedAmount.toFixed(2)}`);
+    console.log(`\nAfter SELL ${symbol} grid:`);
+    if (strat.grid.length === 0) {
+      console.log('  (empty)');
+    } else {
+      strat.grid.forEach((lot, i) =>
+        console.log(
+          `  [${i+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
+        )
+      );
+    }
   }
 }
 
@@ -455,23 +529,28 @@ async function runStrategyForSymbol(symbol) {
 
   // --- STRATEGY DECISION ---
   let action = null;
+  let decision = null;
   if (strat.module && typeof strat.module.getTradeDecision === 'function') {
-    const decision = strat.module.getTradeDecision({
+    decision = strat.module.getTradeDecision({
+      symbol,
       price: info.price,
       lastPrice: strat.priceHistory.length >= 2 ? strat.priceHistory[strat.priceHistory.length - 2] : null,
       costBasis: holding.costBasis,
       strategyState,
       config
     });
-    action = decision && decision.action ? decision.action.toUpperCase() : null;
-    if (action) {
+    if (decision && decision.action) {
+      action = decision.action.toUpperCase();
       console.log(`📈 Strategy decision for ${symbol}: ${action} @ $${info.price.toFixed(8)}`);
+    } else {
+      // Even if no buy/sell, always log a HOLD decision for traceability
+      console.log(`💤 Strategy decision for ${symbol}: HOLD @ $${info.price.toFixed(8)}`);
     }
   }
 
   // --- GUARD: Block trading if not enabled (during seeding) ---
   if (typeof tradingEnabled !== "undefined" && !tradingEnabled) {
-    // Optionally: log that trade is skipped during seeding
+    // Optionally: log that trade is skipped during seeding (always prints HOLD if null)
     if (action) {
       console.log(`💤 Trade skipped for ${symbol} during seeding: ${action}`);
     }
@@ -480,7 +559,7 @@ async function runStrategyForSymbol(symbol) {
 
   // --- BUY HANDLING ---
   if (action === 'BUY') {
-    // Only use a *small portion* of available cash per buy (e.g., 10%), but at least enough for minTradeAmount
+    // === Only use a small portion of cash per buy, but always enough for minimum trade ===
     const spend = Math.max(
       portfolio.cashReserve * 0.10,
       config.minTradeAmount * info.price
@@ -495,14 +574,30 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
 
-    // Execute buy and push grid lot
+    // === Execute Buy: update holdings and cash, then add to grid ===
     holding.amount += actualQty;
     portfolio.cashReserve = Math.round((portfolio.cashReserve - spend) * 100) / 100;
 
     strat.grid = strat.grid || [];
     strat.grid.push({ price: info.price, amount: actualQty, time: Date.now() });
-    console.log(`After BUY, ${symbol} grid:`, JSON.stringify(strat.grid));
-    console.log(`After BUY, ${symbol} cashReserve: $${portfolio.cashReserve.toFixed(2)}`);
+    portfolio.buysToday++;
+
+    // === Formatted Output ===
+    console.log(`🟢 BUY executed: ${actualQty.toFixed(6)} ${symbol} @ $${info.price.toFixed(config.priceDecimalPlaces)}`);
+
+    // Print grid state after BUY, with numbered entries and human-readable times.
+    console.log(`\nAfter BUY ${symbol} grid:`);
+    if (strat.grid.length === 0) {
+      // If grid is empty, indicate so for clarity
+      console.log('  (empty)');
+    } else {
+      strat.grid.forEach((lot, idx) =>
+        console.log(
+          `  [${idx+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, ` +
+          `amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
+        )
+      );
+    }
     return;
   }
 
@@ -514,14 +609,23 @@ async function runStrategyForSymbol(symbol) {
       console.log(`❌ SELL skipped for ${symbol}: grid empty or lot amount <= 0; grid=`, JSON.stringify(strat.grid));
       return;
     }
-    // Log before executing sell
-    console.log(`📉 SELL executed for ${symbol}: lot=`, JSON.stringify(lot), 'grid=', JSON.stringify(strat.grid));
     executeTrade(symbol, 'SELL', info.price);
-    console.log(`After SELL, ${symbol} grid:`, JSON.stringify(strat.grid));
+
+    // --- FORMATTED GRID OUTPUT ---
+    console.log(`\nAfter SELL ${symbol} grid:`);
+    if (strat.grid.length === 0) {
+      console.log('  (empty)');
+    } else {
+      strat.grid.forEach((lot, idx) =>
+        console.log(
+          `  [${idx+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
+        )
+      );
+    }
     return;
   }
 
-  // No trade
+  // No trade, already logged as HOLD above
   return;
 }
 
@@ -555,6 +659,33 @@ async function printFinalSummary() {
   console.log(`Crypto (mkt):$${safe(finalCrypto)}`);
   console.log(`Locked:      $${safe(portfolio.lockedCash)}`);
   console.log('=============================\n');
+
+  // === FINAL HOLDINGS SUMMARY ===
+  console.log('\n--- FINAL HOLDINGS (still owned) ---');
+  let hasHoldings = false;
+  Object.entries(portfolio.cryptos).forEach(([sym, data]) => {
+    const amount = Number(data.amount);
+    if (amount >= config.minTradeAmount) {
+      hasHoldings = true;
+      const lastPrice = strategies[sym]?.lastPrice || 0;
+      const val = amount * lastPrice;
+      console.log(`  ${sym}: ${amount.toFixed(6)} @ $${lastPrice.toFixed(6)} = $${val.toFixed(2)}`);
+    }
+  });
+  if (!hasHoldings) {
+    console.log('  (none)');
+  }
+
+  // === FULLY SOLD COINS (Sold Out) ===
+  console.log('\n--- FULLY SOLD COINS (completely sold this run) ---');
+  if (soldOutSymbols.size === 0) {
+    console.log('  (none)');
+  } else {
+    for (const sym of soldOutSymbols) {
+      const lastPrice = strategies[sym]?.lastPrice || 0;
+      console.log(`  ${sym} (last known price $${lastPrice.toFixed(6)})`);
+    }
+  }
 }
 
 // ==============================================
@@ -622,6 +753,13 @@ async function printFinalSummary() {
   const interval = setInterval(async () => {
     for (const sym of Object.keys(portfolio.cryptos)) {
       await runStrategyForSymbol(sym);
+    }
+
+    // Profit Lock Check: Run once per tick after all symbols
+    if (typeof selectedStrategy.shouldLockProfit === "function" && typeof selectedStrategy.lockProfit === "function") {
+      if (selectedStrategy.shouldLockProfit(portfolio, config)) {
+        selectedStrategy.lockProfit(portfolio, config);
+      }
     }
   }, config.checkInterval);
 

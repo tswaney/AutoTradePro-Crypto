@@ -1,7 +1,7 @@
 {
   "BTCUSD": {
     "amount": 0.03782988,
-    "costBasis": 117175.00,
+    "costBasis": 81454.40,
     "grid": [
       {
         "price": 108803.46996936,
@@ -12,7 +12,7 @@
   },
   "BONKUSD": {
     "amount": 88281627.00,
-    "costBasis": 0.0000284,
+    "costBasis": 0.00001673,
     "grid": [
       {
         "price": 0.00002175,
@@ -23,7 +23,7 @@
   },
   "ETHUSD": {
     "amount": 0.7195392675156308,
-    "costBasis": 3749.53,
+    "costBasis": 3501.53,
     "grid": [
       {
         "price": 2556.45702515,
@@ -67,7 +67,7 @@
   },
   "XRPUSD": {
     "amount": 183.463075,
-    "costBasis": 3.1,
+    "costBasis": 2.834,
     "grid": [
       {
         "price": 2.349894275,
@@ -78,7 +78,7 @@
   },
   "TRUMPUSD": {
     "amount": 26.1449,
-    "costBasis": 9.38,
+    "costBasis": 52.19,
     "grid": [
       {
         "price": 12.944287365,
@@ -144,7 +144,7 @@
   },
   "LINKUSD": {
     "amount": 0.4387969694709001,
-    "costBasis": 17.31,
+    "costBasis": 14.31,
     "grid": [
       {
         "price": 15.713665835,
@@ -155,7 +155,7 @@
   },
   "AVAXUSD": {
     "amount": 0.047,
-    "costBasis": 24.0,
+    "costBasis": 16.17,
     "grid": [
       {
         "price": 23.137101,
@@ -166,7 +166,7 @@
   },
   "COMPUSD": {
     "amount": 0.0190439760174337,
-    "costBasis": 46.79,
+    "costBasis": 41.48,
     "grid": [
       {
         "price": 42.794056895,

@@ -425,15 +425,20 @@ async function getPrice(symbol) {
 // ==============================================
 // Actual Buy/Sell execution logic
 // ==============================================
-function executeTrade(symbol, action, price) {
+function executeTrade(symbol, action, price, sellAmount = null) {
   const strat   = strategies[symbol];
   const holding = portfolio.cryptos[symbol];
-  let lotSize = holding.grid[0].amount;
+  const LOCKED_CASH_FRAC = parseFloat(process.env.PROFIT_LOCK_PARTIAL) || 0.0;
+  const minHold = parseFloat(process.env.MIN_HOLD_AMOUNT) || 0.01;
+
+  // PATCH: Always use the minTradeAmount from config for empty detection
+  const minTradeAmount = config.minTradeAmount || minHold;
 
   if (action === 'BUY') {
     // === Core Buy Logic ===
-    // [insert your buy math above: lot sizing, spend, cash update, etc.]
+    // You should set 'actualQty' appropriately in your buy code
     strat.grid.push({ price, amount: actualQty, time: Date.now() });
+    holding.amount = (holding.amount || 0) + actualQty;
     portfolio.buysToday++;
 
     // === Formatted Output ===
@@ -442,40 +447,66 @@ function executeTrade(symbol, action, price) {
     // Print grid state after BUY, with numbered entries and human-readable times.
     console.log(`\nAfter BUY ${symbol} grid:`);
     if (strat.grid.length === 0) {
-      // If grid is empty, indicate so for clarity
       console.log('  (empty)');
     } else {
       strat.grid.forEach((lot, i) =>
         console.log(
-          `  [${i+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, ` +
-          `amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
+          `  [${i+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
         )
       );
     }
   } else if (action === 'SELL') {
-    const lot = strat.grid.shift();
+    // PATCH: Only partially sell the lot if it would drop below minHold
+    let lot = strat.grid[0];
     if (!lot) return;
-    const qty      = lot.amount;
-    const proceeds = Math.round((price * qty * (1 - strat.slippage)) * 100) / 100;
+
+    // PATCH: Determine the sell quantity
+    let qtyToSell;
+    if (sellAmount !== null && sellAmount > 0 && lot.amount - sellAmount >= minHold) {
+      qtyToSell = sellAmount;
+      lot.amount -= qtyToSell;
+      // If lot remains above minHold, do not shift it from the grid
+      if (lot.amount < minHold) lot.amount = minHold; // Patch: extra safety
+    } else if (lot.amount > minHold) {
+      qtyToSell = lot.amount - minHold;
+      lot.amount = minHold; // Reduce to anchor
+    } else {
+      // Not enough to sell (would go below min hold)
+      console.log(`❌ SELL BLOCKED for ${symbol}: cannot sell below minimum holding (${minHold})`);
+      return;
+    }
+
+    // PATCH: If after sell lot is exactly minHold, do NOT shift it (keep in grid)
+    if (lot.amount > minHold * 0.999) {
+      // Remain in grid as anchor lot
+    } else {
+      // Defensive fallback: should not happen, but just in case, keep as anchor
+      lot.amount = minHold;
+    }
+
+    const proceeds = Math.round((price * qtyToSell * (1 - (strat.slippage || 0))) * 100) / 100;
     portfolio.cashReserve = Math.round((portfolio.cashReserve + proceeds) * 100) / 100;
-    const profit = Math.round((proceeds - (lot.price * qty)) * 100) / 100;
+    const profit = Math.round((proceeds - (lot.price * qtyToSell)) * 100) / 100;
     let lockedAmount = 0;
     if (profit > 0) {
       lockedAmount = Math.round((profit * LOCKED_CASH_FRAC) * 100) / 100;
       portfolio.lockedCash = Math.round((portfolio.lockedCash + lockedAmount) * 100) / 100;
     }
-    holding.amount        -= qty;
-    if (holding.amount < config.minTradeAmount) {
-      soldOutSymbols.add(symbol);
+    holding.amount -= qtyToSell;
+
+    // PATCH: Never remove the anchor grid lot, even if holding drops to minHold
+    if (holding.amount < minTradeAmount) {
+      soldOutSymbols.add(symbol); // If you use this elsewhere, still flag
     }
-    holding.costBasis     = strat.grid.length
-                          ? strat.grid[strat.grid.length-1].price
-                          : holding.costBasis;
+
+    holding.costBasis = strat.grid.length
+      ? strat.grid[strat.grid.length - 1].price
+      : holding.costBasis;
     portfolio.dailyProfitTotal = Math.round((portfolio.dailyProfitTotal + profit) * 100) / 100;
     portfolio.sellsToday++;
 
     // --- FORMATTED OUTPUT ---
-    console.log(`🔴 SELL executed: ${qty.toFixed(6)} ${symbol} @ $${price.toFixed(config.priceDecimalPlaces)} P/L $${profit.toFixed(2)}  Locked: $${lockedAmount.toFixed(2)}`);
+    console.log(`🔴 SELL executed: ${qtyToSell.toFixed(6)} ${symbol} @ $${price.toFixed(config.priceDecimalPlaces)} P/L $${profit.toFixed(2)}  Locked: $${lockedAmount.toFixed(2)}`);
     console.log(`\nAfter SELL ${symbol} grid:`);
     if (strat.grid.length === 0) {
       console.log('  (empty)');
@@ -530,6 +561,7 @@ async function runStrategyForSymbol(symbol) {
   // --- STRATEGY DECISION ---
   let action = null;
   let decision = null;
+
   if (strat.module && typeof strat.module.getTradeDecision === 'function') {
     decision = strat.module.getTradeDecision({
       symbol,
@@ -559,7 +591,8 @@ async function runStrategyForSymbol(symbol) {
 
   // --- BUY HANDLING ---
   if (action === 'BUY') {
-    // === Only use a small portion of cash per buy, but always enough for minimum trade ===
+    // === Calculate spend for this buy ===
+    // Use a small portion of cash per buy, but always ensure at least the minimum trade size.
     const spend = Math.max(
       portfolio.cashReserve * 0.10,
       config.minTradeAmount * info.price
@@ -574,7 +607,8 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
 
-    // === Execute Buy: update holdings and cash, then add to grid ===
+    // === Execute Buy: always allow new grid lot, even if anchor/minHold exists ===
+    // This enables DCA/grid buys at any price dip signal, regardless of prior grid state.
     holding.amount += actualQty;
     portfolio.cashReserve = Math.round((portfolio.cashReserve - spend) * 100) / 100;
 
@@ -588,20 +622,19 @@ async function runStrategyForSymbol(symbol) {
     // Print grid state after BUY, with numbered entries and human-readable times.
     console.log(`\nAfter BUY ${symbol} grid:`);
     if (strat.grid.length === 0) {
-      // If grid is empty, indicate so for clarity
+      // If grid is empty, indicate so for clarity (should not happen in this logic)
       console.log('  (empty)');
     } else {
       strat.grid.forEach((lot, idx) =>
         console.log(
-          `  [${idx+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, ` +
-          `amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
+          `  [${idx+1}] price=${lot.price.toFixed(config.priceDecimalPlaces)}, amount=${lot.amount.toFixed(6)}, time=${new Date(lot.time).toLocaleString()}`
         )
       );
     }
     return;
   }
 
-  // --- SELL HANDLING ---
+  // --- SELL HANDLING (with STOP-LOSS and MINIMUM HOLD PATCH) ---
   if (action === 'SELL') {
     strat.grid = strat.grid || [];
     const lot = strat.grid[0];
@@ -609,7 +642,35 @@ async function runStrategyForSymbol(symbol) {
       console.log(`❌ SELL skipped for ${symbol}: grid empty or lot amount <= 0; grid=`, JSON.stringify(strat.grid));
       return;
     }
-    executeTrade(symbol, 'SELL', info.price);
+
+    // STOP-LOSS and min hold logic...
+    const stopLossActive = process.env.STOP_LOSS_MODE === "true";
+    const stopLossPct = parseFloat(process.env.STOP_LOSS_THRESHOLD_PCT) || 10;
+    const stopLossPrice = lot.price * (1 - stopLossPct / 100);
+    const minHold = parseFloat(process.env.MIN_HOLD_AMOUNT) || 0.01;
+    let sellableAmount = lot.amount - minHold;
+    if (sellableAmount <= 0) {
+      console.log(`❌ SELL BLOCKED for ${symbol}: cannot sell below minimum holding (${minHold})`);
+      return;
+    }
+
+    // 🛡️ SELL GUARD: Block if price < cost basis unless STOP-LOSS is active
+    if (info.price < lot.price) {
+      if (stopLossActive && info.price <= stopLossPrice) {
+        console.log(`⚠️ STOP-LOSS SELL for ${symbol}: sell price $${info.price.toFixed(config.priceDecimalPlaces)} < stop-loss $${stopLossPrice.toFixed(config.priceDecimalPlaces)} (cost basis $${lot.price.toFixed(config.priceDecimalPlaces)})`);
+      } else {
+        console.log(`❌ SELL BLOCKED for ${symbol}: sell price $${info.price.toFixed(config.priceDecimalPlaces)} < cost basis $${lot.price.toFixed(config.priceDecimalPlaces)}`);
+        return;
+      }
+    }
+
+    // ✅ Now safe to sell
+    executeTrade(symbol, 'SELL', info.price, sellableAmount, lot); // 🔥 pass `lot`
+    // Reduce lot in grid (DO NOT REMOVE LOT, only update amount)
+    lot.amount -= sellableAmount;
+    if (lot.amount < minHold) {
+      lot.amount = minHold;
+    }
 
     // --- FORMATTED GRID OUTPUT ---
     console.log(`\nAfter SELL ${symbol} grid:`);
@@ -753,6 +814,13 @@ async function printFinalSummary() {
   const interval = setInterval(async () => {
     for (const sym of Object.keys(portfolio.cryptos)) {
       await runStrategyForSymbol(sym);
+    }
+
+    // Profit Lock Check: Run once per tick after all symbols
+    if (typeof selectedStrategy.shouldLockProfit === "function" && typeof selectedStrategy.lockProfit === "function") {
+      if (selectedStrategy.shouldLockProfit(portfolio, config)) {
+        selectedStrategy.lockProfit(portfolio, config);
+      }
     }
   }, config.checkInterval);
 

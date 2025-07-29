@@ -1,12 +1,14 @@
-// strategies/dynamicRegimeSwitching.js
-// NOTE: This is the base strategy; see dynamicRegimeSwitchingProfitLock.js for version with profit locking logic!
+// strategies/dynamicRegimeSwitchingProfitLock.js
+// Extension of Dynamic Regime Switching with Profit Locking logic
+
+const { parseISO, isAfter, addDays } = require('date-fns');
 
 module.exports = {
-  name: "Dynamic Regime Switching",
-  version: "1.0",
-  description: "Auto-switches between DCA, Grid/Mean Reversion, and Accumulate based on market regime.",
-
-  // --- Helper Functions ---
+  name: "Dynamic Regime Switching + Profit Lock",
+  version: "2.0",
+  description: "Switches regimes (DCA, Grid, Accumulate) AND auto-locks profits daily or when threshold reached.",
+  
+  // --- Helper Functions (copied from v1) ---
   sma(prices, len) {
     if (prices.length < len) return null;
     return prices.slice(-len).reduce((a, b) => a + b, 0) / len;
@@ -18,7 +20,6 @@ module.exports = {
     return Math.sqrt(variance);
   },
   adx(trendHist) {
-    // Crude approximation: returns 10 (weak), 25 (neutral), or 40 (strong trend)
     if (!trendHist || trendHist.length < 14) return 20;
     const up   = trendHist.filter(t => t === "up").length;
     const down = trendHist.filter(t => t === "down").length;
@@ -27,30 +28,80 @@ module.exports = {
     return 10;
   },
 
-  // --- Core Regime Detection ---
+  // --- Regime Detection (same as v1) ---
   detectRegime(state, config) {
     const ph = state.priceHistory;
     if (!ph || ph.length < 201) return "uptrend"; // default until enough history
-
     const sma50  = this.sma(ph, 50);
     const sma200 = this.sma(ph, 200);
     const curr   = ph[ph.length - 1];
     const adx    = this.adx(state.trendHistory);
-
-    // Uptrend: Short MA above long MA, current price above both, strong ADX
     if (sma50 && sma200 && curr > sma50 && sma50 > sma200 && adx >= 25)
       return "uptrend";
-    // Downtrend: Short MA below long MA, price below both, strong ADX
     if (sma50 && sma200 && curr < sma50 && sma50 < sma200 && adx >= 25)
       return "downtrend";
-    // Rangebound: Price within 1% of sma200, weak ADX
     if (sma200 && Math.abs(curr - sma200) / sma200 < 0.01 && adx < 25)
       return "rangebound";
-    // Default
     return "rangebound";
   },
 
-  // --- Core Trading Logic ---
+  // --- Profit Locking State (per bot run) ---
+  _lastProfitLockTime: null,
+
+  /**
+   * Should we lock profits? (returns true if lock event should occur)
+   * - Scheduled: at the specified daily time (HH:mm)
+   * - Amount: if daily profit exceeds a specified value
+   */
+  shouldLockProfit(portfolio, config) {
+    // Check if profit lock is enabled
+    if (process.env.PROFIT_LOCK_ENABLE !== 'true') return false;
+
+    const now = new Date();
+
+    // Scheduled time logic (defaults to 00:00 if unset)
+    if (
+      process.env.PROFIT_LOCK_TYPE === 'scheduled' ||
+      process.env.PROFIT_LOCK_TYPE === 'both'
+    ) {
+      const [h, m] = (process.env.PROFIT_LOCK_TIME || "00:00").split(':').map(Number);
+      const todayLockTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+      if ((!this._lastProfitLockTime || this._lastProfitLockTime < todayLockTime) && now >= todayLockTime) {
+        return true;
+      }
+    }
+
+    // Amount logic
+    const lockAmount = parseFloat(process.env.PROFIT_LOCK_AMOUNT) || 0;
+    if (
+      (process.env.PROFIT_LOCK_TYPE === 'amount' || process.env.PROFIT_LOCK_TYPE === 'both') &&
+      portfolio.dailyProfitTotal >= lockAmount &&
+      (!this._lastProfitLockTime || now - this._lastProfitLockTime > 3600*1000) // Only once per hour
+    ) {
+      return true;
+    }
+
+    return false;
+  },
+
+  /**
+   * Lock the current daily profit to lockedCash, reset dailyProfitTotal.
+   * Returns the amount locked.
+   */
+  lockProfit(portfolio, config) {
+    const lockPartial = parseFloat(process.env.PROFIT_LOCK_PARTIAL) || 1.0;
+    const amountToLock = Math.round((portfolio.dailyProfitTotal * lockPartial) * 100) / 100;
+    if (amountToLock > 0) {
+      portfolio.lockedCash = Math.round((portfolio.lockedCash + amountToLock) * 100) / 100;
+      portfolio.dailyProfitTotal = Math.round((portfolio.dailyProfitTotal - amountToLock) * 100) / 100;
+      this._lastProfitLockTime = new Date();
+      console.log(`🔒 PROFIT LOCKED: $${amountToLock} moved to locked cash. [${this._lastProfitLockTime.toLocaleString()}]`);
+      return amountToLock;
+    }
+    return 0;
+  },
+
+  // --- Core Trading Logic (as before) ---
   getTradeDecision({ symbol, price, lastPrice, costBasis, strategyState, config }) {
     const regime = this.detectRegime(strategyState, config);
     const grid = strategyState.grid || [];
@@ -60,9 +111,6 @@ module.exports = {
     if (grid && grid.length > 0) {
       const lot = grid[0];
       if (lot && lot.amount > 0 && price >= lot.price * (1 + sellThreshold)) {
-        if (process.env.DEBUG) {
-          console.log(`[DEBUG][${symbol}] Grid SELL: price $${price} > grid entry $${lot.price} (+${sellThreshold*100}%)`);
-        }
         return {
           action: "SELL",
           price: price,
@@ -72,14 +120,14 @@ module.exports = {
       }
     }
 
-    if (process.env.DEBUG_BUYS) {
-      console.log(`[DEBUG][${symbol}] Buy check: price=${price}, costBasis=${costBasis}, upTicks=${strategyState.upTicks}, regime=${regime}, atr=${atr}, buyThresh=${buyThresh}`);
-    }
-
     // --- DCA (Uptrend) ---
     if (regime === "uptrend") {
       if (price > costBasis * 1.01)
         return { action: "BUY", regime: "uptrend", reason: "Uptrend buy trigger" };
+    }
+
+    if (process.env.DEBUG) {
+      console.log(`[DEBUG][${symbol}] Grid SELL: price $${price} > grid entry $${lot.price} (+${sellThreshold*100}%)`);
     }
 
     // --- Accumulate (Downtrend) ---
@@ -102,8 +150,7 @@ module.exports = {
     return null;
   },
 
-  // --- Optionally, update strategy state on each price update ---
   updateStrategyState(symbol, state, config) {
-    // No-op for now; extend for smarter learning
+    // Extend for learning if needed
   }
 };

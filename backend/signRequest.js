@@ -24,13 +24,32 @@ const keyPair = nacl.sign.keyPair.fromSeed(privSeed);
  * @returns {string} Base64 signature
  */
 function signRequest(apiKey, timestamp, path, method, body) {
-  let message = timestamp + method.toUpperCase() + path;
-  if (body) message += JSON.stringify(body); // No body? Don't append anything.
-  // Debug: print the message being signed
-  console.log("DEBUG SIGNING MESSAGE:", JSON.stringify(message));
+  // 1. Print all inputs
+  console.log("=== SIGN REQUEST INPUTS ===");
+  console.log("apiKey:      ", apiKey);
+  console.log("timestamp:   ", timestamp);
+  console.log("path:        ", path);
+  console.log("method:      ", method);
+  console.log("body:        ", typeof body === "string" ? body : JSON.stringify(body));
+
+  // 2. Build the message
+  let message = apiKey + timestamp + path + method.toUpperCase();
+  if (body) {
+    message += typeof body === "string" ? body : JSON.stringify(body);
+  }
+
+  // 3. Print the final message string and its hex/bytes
+  console.log("\n=== DEBUG SIGNING MESSAGE (string) ===\n", message);
+  console.log("\n=== DEBUG SIGNING MESSAGE (hex) ===\n", Buffer.from(message, 'utf8').toString('hex'));
+  console.log("=== DEBUG SIGNING MESSAGE (length) ===", Buffer.from(message, 'utf8').length);
+
+  // 4. Generate and print the signature
   const msgBytes = util.decodeUTF8(message);
   const sigBytes = nacl.sign.detached(msgBytes, keyPair.secretKey);
-  return util.encodeBase64(sigBytes);
+  const sigBase64 = util.encodeBase64(sigBytes);
+  console.log("=== DEBUG SIGNATURE (base64) ===", sigBase64);
+
+  return sigBase64;
 }
 
 module.exports = { signRequest };

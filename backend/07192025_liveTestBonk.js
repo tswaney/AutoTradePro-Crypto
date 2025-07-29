@@ -98,9 +98,6 @@ async function placeOrder(side, qty) {
   console.log(">>> Final POST headers:", JSON.stringify(headers, null, 2));
 
   console.log(`🚀 ${side.toUpperCase()} ${qty} ${body.symbol}`);
-  console.log("\n=== FINAL POST BODY (canonicalBody) ===\n", canonicalBody);
-  console.log("\n=== FINAL POST BODY (hex) ===\n", Buffer.from(canonicalBody, 'utf8').toString('hex'));
-  console.log("\n=== FINAL HEADERS ===\n", JSON.stringify(headers, null, 2));
   const resp = await axios.post(url, body, { headers });
   return resp.data.id;
 }
