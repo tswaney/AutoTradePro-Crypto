@@ -22,203 +22,556 @@ Current Holdings:
 ┌────┬───────────┬─────────────────┬─────────────────┬───────────────┐
 │ No │  Symbol   │    Quantity     │      Price      │   CostBasis   │
 ├────┼───────────┼─────────────────┼─────────────────┼───────────────┤
-│ 1  │ BTCUSD    │ 0.037830        │ 118635.47504495 │ 117175.000000 │
-│ 2  │ BONKUSD   │ 88281627.000000 │ 0.00002983      │ 0.000028      │
-│ 3  │ ETHUSD    │ 0.719539        │ 3865.11254980   │ 3749.530000   │
-│ 4  │ XLMUSD    │ 3922.680000     │ 0.42724555      │ 0.410510      │
-│ 5  │ POPCATUSD │ 2234.040000     │ 0.34447165      │ 0.492500      │
-│ 6  │ PEPEUSD   │ 81263652.000000 │ 0.00001163      │ 0.000023      │
-│ 7  │ XRPUSD    │ 183.463075      │ 3.16958000      │ 3.100000      │
-│ 8  │ TRUMPUSD  │ 26.144900       │ 9.44599755      │ 9.380000      │
-│ 9  │ ADAUSD    │ 86.160000       │ 0.78774787      │ 1.114206      │
-│ 10 │ SOLUSD    │ 0.260140        │ 182.58261620    │ 178.330000    │
-│ 11 │ LTCUSD    │ 0.406823        │ 111.11890200    │ 139.670000    │
-│ 12 │ DOGEUSD   │ 87.690905       │ 0.22530895      │ 0.397761      │
-│ 13 │ SHIBUSD   │ 991179.420000   │ 0.00001316      │ 0.000014      │
-│ 14 │ LINKUSD   │ 0.438797        │ 18.19693975     │ 17.310000     │
-│ 15 │ AVAXUSD   │ 0.047000        │ 24.08990375     │ 24.000000     │
-│ 16 │ COMPUSD   │ 0.019044        │ 47.88963035     │ 46.790000     │
+│ 1  │ BTCUSD    │ 0.037830        │ 118487.69443666 │ 117175.000000 │
+│ 2  │ BONKUSD   │ 88281627.000000 │ 0.00002954      │ 0.000028      │
+│ 3  │ ETHUSD    │ 0.719539        │ 3858.53020250   │ 3749.530000   │
+│ 4  │ XLMUSD    │ 3922.680000     │ 0.42571680      │ 0.410510      │
+│ 5  │ POPCATUSD │ 2234.040000     │ 0.34269688      │ 0.492500      │
+│ 6  │ PEPEUSD   │ 81263652.000000 │ 0.00001159      │ 0.000023      │
+│ 7  │ XRPUSD    │ 183.463075      │ 3.16292500      │ 3.100000      │
+│ 8  │ TRUMPUSD  │ 26.144900       │ 9.42425805      │ 9.380000      │
+│ 9  │ ADAUSD    │ 86.160000       │ 0.78454760      │ 1.114206      │
+│ 10 │ SOLUSD    │ 0.260140        │ 181.96275525    │ 178.330000    │
+│ 11 │ LTCUSD    │ 0.406823        │ 110.86293475    │ 139.670000    │
+│ 12 │ DOGEUSD   │ 87.690905       │ 0.22425338      │ 0.397761      │
+│ 13 │ SHIBUSD   │ 991179.420000   │ 0.00001312      │ 0.000014      │
+│ 14 │ LINKUSD   │ 0.438797        │ 18.14625023     │ 17.310000     │
+│ 15 │ AVAXUSD   │ 0.047000        │ 23.99800850     │ 24.000000     │
+│ 16 │ COMPUSD   │ 0.019044        │ 47.85399862     │ 46.790000     │
 └────┴───────────┴─────────────────┴─────────────────┴───────────────┘
 
 === STARTUP SUMMARY ===
-Beginning Portfolio Value: $14344.95
+Beginning Portfolio Value: $14293.81
 🔄 Seeding initial cycle (no trades)...
-[DEBUG][ETHUSD] Buy check: price=3865.1125498, costBasis=3749.53, trend=uptrend, atr=0.10314148571420187, buyThresh=1.5
-📈 Strategy decision for ETHUSD: SELL @ $3865.11254980
-[DEBUG][ETHUSD] price=3865.1125498, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
-💤 Trade skipped for ETHUSD during seeding: SELL
-[DEBUG][LTCUSD] Buy check: price=111.1210345, costBasis=139.67, trend=uptrend, atr=0.01, buyThresh=1.5
-💤 Strategy decision for LTCUSD: HOLD @ $111.12103450
-[DEBUG][LTCUSD] price=111.1210345, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][BONKUSD] Buy check: price=0.000029835, costBasis=0.0000284, trend=uptrend, atr=0.01, buyThresh=1.5
-💤 Strategy decision for BONKUSD: HOLD @ $0.00002984
-[DEBUG][BONKUSD] price=0.000029835, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][DOGEUSD] Buy check: price=0.225306495, costBasis=0.397761, trend=uptrend, atr=0.000001994285714290722, buyThresh=1.5
-💤 Strategy decision for DOGEUSD: HOLD @ $0.22530649
-[DEBUG][DOGEUSD] price=0.225306495, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][SHIBUSD] Buy check: price=0.00001316, costBasis=0.00001434, trend=uptrend, atr=0.01, buyThresh=1.5
-💤 Strategy decision for SHIBUSD: HOLD @ $0.00001316
-[DEBUG][SHIBUSD] price=0.00001316, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][BTCUSD] Buy check: price=118635.92122995, costBasis=117175, trend=uptrend, atr=0.0014285714299018895, buyThresh=1.5
-📈 Strategy decision for BTCUSD: SELL @ $118635.92122995
-[DEBUG][BTCUSD] price=118635.92122995, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][BTCUSD] Buy check: price=118487.694436665, costBasis=117175, trend=uptrend, atr=0.01, buyThresh=1.5
+📈 Strategy decision for BTCUSD: SELL @ $118487.69443666
+[DEBUG][BTCUSD] price=118487.694436665, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
 💤 Trade skipped for BTCUSD during seeding: SELL
-[DEBUG][ADAUSD] Buy check: price=0.787732955, costBasis=1.1142061, trend=uptrend, atr=0.0000029514285714452422, buyThresh=1.5
-💤 Strategy decision for ADAUSD: HOLD @ $0.78773295
-[DEBUG][ADAUSD] price=0.787732955, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][XRPUSD] Buy check: price=3.16965, costBasis=3.1, trend=uptrend, atr=0.000025714285714200408, buyThresh=1.5
-📈 Strategy decision for XRPUSD: SELL @ $3.16965000
-[DEBUG][XRPUSD] price=3.16965, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
-💤 Trade skipped for XRPUSD during seeding: SELL
-[DEBUG][XLMUSD] Buy check: price=0.42723015, costBasis=0.41051, trend=uptrend, atr=0.01, buyThresh=1.5
-📈 Strategy decision for XLMUSD: SELL @ $0.42723015
-[DEBUG][XLMUSD] price=0.42723015, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][ETHUSD] Buy check: price=3858.479778, costBasis=3749.53, trend=uptrend, atr=0.01, buyThresh=1.5
+📈 Strategy decision for ETHUSD: SELL @ $3858.47977800
+[DEBUG][ETHUSD] price=3858.479778, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
+💤 Trade skipped for ETHUSD during seeding: SELL
+[DEBUG][BONKUSD] Buy check: price=0.000029545, costBasis=0.0000284, trend=uptrend, atr=0.01, buyThresh=1.5
+💤 Strategy decision for BONKUSD: HOLD @ $0.00002954
+[DEBUG][BONKUSD] price=0.000029545, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XLMUSD] Buy check: price=0.4259105, costBasis=0.41051, trend=uptrend, atr=0.01, buyThresh=1.5
+📈 Strategy decision for XLMUSD: SELL @ $0.42591050
+[DEBUG][XLMUSD] price=0.4259105, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
 💤 Trade skipped for XLMUSD during seeding: SELL
-[DEBUG][PEPEUSD] Buy check: price=0.00001163, costBasis=0.00002342, trend=uptrend, atr=0.01, buyThresh=1.5
-💤 Strategy decision for PEPEUSD: HOLD @ $0.00001163
-[DEBUG][PEPEUSD] price=0.00001163, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][POPCATUSD] Buy check: price=0.34447518, costBasis=0.4925, trend=uptrend, atr=2.8571428556389833e-9, buyThresh=1.5
-💤 Strategy decision for POPCATUSD: HOLD @ $0.34447518
-[DEBUG][POPCATUSD] price=0.34447518, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][SOLUSD] Buy check: price=182.58261545, costBasis=178.33, trend=uptrend, atr=0.01, buyThresh=1.5
-📈 Strategy decision for SOLUSD: SELL @ $182.58261545
-[DEBUG][SOLUSD] price=182.58261545, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
-💤 Trade skipped for SOLUSD during seeding: SELL
-[DEBUG][COMPUSD] Buy check: price=47.88963035, costBasis=46.79, trend=uptrend, atr=0.01, buyThresh=1.5
-📈 Strategy decision for COMPUSD: SELL @ $47.88963035
-[DEBUG][COMPUSD] price=47.88963035, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
-💤 Trade skipped for COMPUSD during seeding: SELL
-[DEBUG][AVAXUSD] Buy check: price=24.08990375, costBasis=24, trend=uptrend, atr=0.01, buyThresh=1.5
-📈 Strategy decision for AVAXUSD: SELL @ $24.08990375
-[DEBUG][AVAXUSD] price=24.08990375, costBasis=24, trend=unknown, delta=n/a, atr=n/a
-💤 Trade skipped for AVAXUSD during seeding: SELL
-[DEBUG][LINKUSD] Buy check: price=18.19693975, costBasis=17.31, trend=uptrend, atr=0.01, buyThresh=1.5
-📈 Strategy decision for LINKUSD: SELL @ $18.19693975
-[DEBUG][LINKUSD] price=18.19693975, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
-💤 Trade skipped for LINKUSD during seeding: SELL
-[DEBUG][TRUMPUSD] Buy check: price=9.44599755, costBasis=9.38, trend=uptrend, atr=0.01, buyThresh=1.5
-📈 Strategy decision for TRUMPUSD: SELL @ $9.44599755
-[DEBUG][TRUMPUSD] price=9.44599755, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][TRUMPUSD] Buy check: price=9.42425805, costBasis=9.38, trend=uptrend, atr=0.01, buyThresh=1.5
+📈 Strategy decision for TRUMPUSD: SELL @ $9.42425805
+[DEBUG][TRUMPUSD] price=9.42425805, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
 💤 Trade skipped for TRUMPUSD during seeding: SELL
+[DEBUG][ADAUSD] Buy check: price=0.784547605, costBasis=1.1142061, trend=uptrend, atr=0.01, buyThresh=1.5
+💤 Strategy decision for ADAUSD: HOLD @ $0.78454760
+[DEBUG][ADAUSD] price=0.784547605, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][PEPEUSD] Buy check: price=0.00001159, costBasis=0.00002342, trend=uptrend, atr=0.01, buyThresh=1.5
+💤 Strategy decision for PEPEUSD: HOLD @ $0.00001159
+[DEBUG][PEPEUSD] price=0.00001159, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SOLUSD] Buy check: price=181.96275525, costBasis=178.33, trend=uptrend, atr=0.01, buyThresh=1.5
+📈 Strategy decision for SOLUSD: SELL @ $181.96275525
+[DEBUG][SOLUSD] price=181.96275525, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
+💤 Trade skipped for SOLUSD during seeding: SELL
+[DEBUG][LTCUSD] Buy check: price=110.86208785, costBasis=139.67, trend=uptrend, atr=0.00012195714285821526, buyThresh=1.5
+💤 Strategy decision for LTCUSD: HOLD @ $110.86208785
+[DEBUG][LTCUSD] price=110.86208785, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][POPCATUSD] Buy check: price=0.34269753, costBasis=0.4925, trend=uptrend, atr=2.4642857142177987e-7, buyThresh=1.5
+💤 Strategy decision for POPCATUSD: HOLD @ $0.34269753
+[DEBUG][POPCATUSD] price=0.34269753, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][DOGEUSD] Buy check: price=0.22425337, costBasis=0.397761, trend=uptrend, atr=0.01, buyThresh=1.5
+💤 Strategy decision for DOGEUSD: HOLD @ $0.22425337
+[DEBUG][DOGEUSD] price=0.22425337, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SHIBUSD] Buy check: price=0.00001312, costBasis=0.00001434, trend=uptrend, atr=0.01, buyThresh=1.5
+💤 Strategy decision for SHIBUSD: HOLD @ $0.00001312
+[DEBUG][SHIBUSD] price=0.00001312, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][AVAXUSD] Buy check: price=23.9980085, costBasis=24, trend=uptrend, atr=0.01, buyThresh=1.5
+💤 Strategy decision for AVAXUSD: HOLD @ $23.99800850
+[DEBUG][AVAXUSD] price=23.9980085, costBasis=24, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XRPUSD] Buy check: price=3.162895, costBasis=3.1, trend=uptrend, atr=0.000004285714285805804, buyThresh=1.5
+📈 Strategy decision for XRPUSD: SELL @ $3.16289500
+[DEBUG][XRPUSD] price=3.162895, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
+💤 Trade skipped for XRPUSD during seeding: SELL
+[DEBUG][LINKUSD] Buy check: price=18.146250345, costBasis=17.31, trend=uptrend, atr=0.01, buyThresh=1.5
+📈 Strategy decision for LINKUSD: SELL @ $18.14625034
+[DEBUG][LINKUSD] price=18.146250345, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
+💤 Trade skipped for LINKUSD during seeding: SELL
+[DEBUG][COMPUSD] Buy check: price=47.85399862, costBasis=46.79, trend=uptrend, atr=0.01, buyThresh=1.5
+📈 Strategy decision for COMPUSD: SELL @ $47.85399862
+[DEBUG][COMPUSD] price=47.85399862, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
+💤 Trade skipped for COMPUSD during seeding: SELL
 ✅ Initial cycle complete — trading now enabled.
-[SEED] BONKUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":0.0000284,"amount":88281627,"time":1753956088375}], costBasis=0.0000284
-[SEED] SHIBUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":0.00001434,"amount":991179.42,"time":1753956088375}], costBasis=0.00001434
-[SEED] COMPUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":46.79,"amount":0.0190439760174337,"time":1753956088375}], costBasis=46.79
-[SEED] ADAUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":1.1142061,"amount":86.16,"time":1753956088375}], costBasis=1.1142061
-[SEED] POPCATUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":0.4925,"amount":2234.04,"time":1753956088375}], costBasis=0.4925
-[SEED] SOLUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":178.33,"amount":0.26014,"time":1753956088375}], costBasis=178.33
-[SEED] XLMUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":0.41051,"amount":3922.68,"time":1753956088375}], costBasis=0.41051
-[SEED] LTCUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":139.67,"amount":0.40682263,"time":1753956088375}], costBasis=139.67
-[SEED] TRUMPUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":9.38,"amount":26.1449,"time":1753956088375}], costBasis=9.38
-[SEED] PEPEUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":0.00002342,"amount":81263652,"time":1753956088375}], costBasis=0.00002342
-[SEED] AVAXUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":24,"amount":0.047,"time":1753956088375}], costBasis=24
-[SEED] LINKUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":17.31,"amount":0.4387969694709001,"time":1753956088375}], costBasis=17.31
-[SEED] DOGEUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":0.397761,"amount":87.69090496,"time":1753956088375}], costBasis=0.397761
-[SEED] BTCUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":117175,"amount":0.03782988,"time":1753956088374}], costBasis=117175
-[SEED] XRPUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":3.1,"amount":183.463075,"time":1753956088375}], costBasis=3.1
-[SEED] ETHUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":3749.53,"amount":0.7195392675156308,"time":1753956088375}], costBasis=3749.53
-[DEBUG][BTCUSD] Buy check: price=118696.00703595, costBasis=117175, trend=uptrend, atr=5.936410621428097, buyThresh=1.5
-📈 Strategy decision for BTCUSD: SELL @ $118696.00703595
-[DEBUG][BTCUSD] price=118696.00703595, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
-❌ SELL BLOCKED for BTCUSD: would yield non-positive profit ($-23.74)
-[DEBUG][BONKUSD] Buy check: price=0.00002983, costBasis=0.0000284, trend=uptrend, atr=2.85714285714283e-9, buyThresh=1.5
-📈 Strategy decision for BONKUSD: SELL @ $0.00002983
-[DEBUG][BONKUSD] price=0.00002983, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
-🔴 SELL executed: 88281626.990000 BONKUSD @ $0.00002983 P/L $73.57  Locked: $58.86
+[SEED] XRPUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":3.1,"amount":183.463075,"time":1753957530440}], costBasis=3.1
+[SEED] TRUMPUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":9.38,"amount":26.1449,"time":1753957530440}], costBasis=9.38
+[SEED] POPCATUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":0.4925,"amount":2234.04,"time":1753957530440}], costBasis=0.4925
+[SEED] XLMUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":0.41051,"amount":3922.68,"time":1753957530440}], costBasis=0.41051
+[SEED] BONKUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":0.0000284,"amount":88281627,"time":1753957530440}], costBasis=0.0000284
+[SEED] PEPEUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":0.00002342,"amount":81263652,"time":1753957530440}], costBasis=0.00002342
+[SEED] SHIBUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":0.00001434,"amount":991179.42,"time":1753957530440}], costBasis=0.00001434
+[SEED] SOLUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":178.33,"amount":0.26014,"time":1753957530440}], costBasis=178.33
+[SEED] AVAXUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":24,"amount":0.047,"time":1753957530441}], costBasis=24
+[SEED] LINKUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":17.31,"amount":0.4387969694709001,"time":1753957530441}], costBasis=17.31
+[SEED] ETHUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":3749.53,"amount":0.7195392675156308,"time":1753957530440}], costBasis=3749.53
+[SEED] ADAUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":1.1142061,"amount":86.16,"time":1753957530440}], costBasis=1.1142061
+[SEED] DOGEUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":0.397761,"amount":87.69090496,"time":1753957530440}], costBasis=0.397761
+[SEED] LTCUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":139.67,"amount":0.40682263,"time":1753957530440}], costBasis=139.67
+[SEED] COMPUSD seeded with priceHistory=59, trendHistory=53, grid=[{"price":46.79,"amount":0.0190439760174337,"time":1753957530441}], costBasis=46.79
+[SEED] BTCUSD seeded with priceHistory=60, trendHistory=53, grid=[{"price":117175,"amount":0.03782988,"time":1753957530440}], costBasis=117175
+[DEBUG][BTCUSD] Buy check: price=118511.847448625, costBasis=117175, trend=uptrend, atr=3.4291819800003265, buyThresh=1.5
+📈 Strategy decision for BTCUSD: SELL @ $118511.84744863
+[DEBUG][BTCUSD] price=118511.847448625, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BTCUSD: would yield non-positive profit ($-28.76)
+[DEBUG][BONKUSD] Buy check: price=0.00002954, costBasis=0.0000284, trend=uptrend, atr=7.142857142858285e-10, buyThresh=1.5
+📈 Strategy decision for BONKUSD: SELL @ $0.00002954
+[DEBUG][BONKUSD] price=0.00002954, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
+🔴 SELL executed: 88281626.990000 BONKUSD @ $0.00002954 P/L $48.48  Locked: $38.78
 
 After SELL BONKUSD grid:
-  [1] price=0.00002840, amount=0.010000, time=7/31/2025, 6:01:28 AM
+  [1] price=0.00002840, amount=0.010000, time=7/31/2025, 6:25:30 AM
 
 After SELL BONKUSD grid:
-  [1] price=0.00002840, amount=0.010000, time=7/31/2025, 6:01:28 AM
-[DEBUG][ETHUSD] Buy check: price=3865.286329, costBasis=3749.53, trend=uptrend, atr=0.036274657142842316, buyThresh=1.5
-📈 Strategy decision for ETHUSD: SELL @ $3865.28632900
-[DEBUG][ETHUSD] price=3865.286329, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
-🔴 SELL executed: 0.709539 ETHUSD @ $3865.28632900 P/L $27.28  Locked: $21.82
+  [1] price=0.00002840, amount=0.010000, time=7/31/2025, 6:25:30 AM
+[DEBUG][ETHUSD] Buy check: price=3859.10382647, costBasis=3749.53, trend=uptrend, atr=0.08122581714288961, buyThresh=1.5
+📈 Strategy decision for ETHUSD: SELL @ $3859.10382647
+[DEBUG][ETHUSD] price=3859.10382647, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
+🔴 SELL executed: 0.709539 ETHUSD @ $3859.10382647 P/L $22.98  Locked: $18.38
 
 After SELL ETHUSD grid:
-  [1] price=3749.53000000, amount=0.010000, time=7/31/2025, 6:01:28 AM
+  [1] price=3749.53000000, amount=0.010000, time=7/31/2025, 6:25:30 AM
 
 After SELL ETHUSD grid:
-  [1] price=3749.53000000, amount=0.010000, time=7/31/2025, 6:01:28 AM
-[DEBUG][XLMUSD] Buy check: price=0.4273001, costBasis=0.41051, trend=uptrend, atr=0.000008325714285717378, buyThresh=1.5
-📈 Strategy decision for XLMUSD: SELL @ $0.42730010
-[DEBUG][XLMUSD] price=0.4273001, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
-🔴 SELL executed: 3922.670000 XLMUSD @ $0.42730010 P/L $32.33  Locked: $25.86
+  [1] price=3749.53000000, amount=0.010000, time=7/31/2025, 6:25:30 AM
+[DEBUG][XLMUSD] Buy check: price=0.4262931, costBasis=0.41051, trend=uptrend, atr=0.000050960000000004655, buyThresh=1.5
+📈 Strategy decision for XLMUSD: SELL @ $0.42629310
+[DEBUG][XLMUSD] price=0.4262931, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
+🔴 SELL executed: 3922.670000 XLMUSD @ $0.42629310 P/L $28.46  Locked: $22.77
 
 After SELL XLMUSD grid:
-  [1] price=0.41051000, amount=0.010000, time=7/31/2025, 6:01:28 AM
+  [1] price=0.41051000, amount=0.010000, time=7/31/2025, 6:25:30 AM
 
 After SELL XLMUSD grid:
-  [1] price=0.41051000, amount=0.010000, time=7/31/2025, 6:01:28 AM
-[DEBUG][POPCATUSD] Buy check: price=0.344571765, costBasis=0.4925, trend=uptrend, atr=0.000005185000000002786, buyThresh=1.5
-💤 Strategy decision for POPCATUSD: HOLD @ $0.34457176
-[DEBUG][POPCATUSD] price=0.344571765, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][PEPEUSD] Buy check: price=0.000011625, costBasis=0.00002342, trend=uptrend, atr=1.428571428571415e-9, buyThresh=1.5
-💤 Strategy decision for PEPEUSD: HOLD @ $0.00001162
-[DEBUG][PEPEUSD] price=0.000011625, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][XRPUSD] Buy check: price=3.17088, costBasis=3.1, trend=uptrend, atr=0.00013142857142854427, buyThresh=1.5
-📈 Strategy decision for XRPUSD: SELL @ $3.17088000
-[DEBUG][XRPUSD] price=3.17088, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
-🔴 SELL executed: 183.453075 XRPUSD @ $3.17088000 P/L $1.37  Locked: $1.10
+  [1] price=0.41051000, amount=0.010000, time=7/31/2025, 6:25:30 AM
+[DEBUG][POPCATUSD] Buy check: price=0.342893995, costBasis=0.4925, trend=uptrend, atr=0.000028582142857145965, buyThresh=1.5
+💤 Strategy decision for POPCATUSD: HOLD @ $0.34289400
+[DEBUG][POPCATUSD] price=0.342893995, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][PEPEUSD] Buy check: price=0.00001159, costBasis=0.00002342, trend=uptrend, atr=0.01, buyThresh=1.5
+💤 Strategy decision for PEPEUSD: HOLD @ $0.00001159
+[DEBUG][PEPEUSD] price=0.00001159, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XRPUSD] Buy check: price=3.1636757, costBasis=3.1, trend=uptrend, atr=0.00011295714285714758, buyThresh=1.5
+📈 Strategy decision for XRPUSD: SELL @ $3.16367570
+[DEBUG][XRPUSD] price=3.1636757, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
+🔴 SELL executed: 183.453075 XRPUSD @ $3.16367570 P/L $0.08  Locked: $0.06
 
 After SELL XRPUSD grid:
-  [1] price=3.10000000, amount=0.010000, time=7/31/2025, 6:01:28 AM
+  [1] price=3.10000000, amount=0.010000, time=7/31/2025, 6:25:30 AM
 
 After SELL XRPUSD grid:
-  [1] price=3.10000000, amount=0.010000, time=7/31/2025, 6:01:28 AM
-[DEBUG][TRUMPUSD] Buy check: price=9.450502, costBasis=9.38, trend=uptrend, atr=0.0006434928571429513, buyThresh=1.5
-📈 Strategy decision for TRUMPUSD: SELL @ $9.45050200
-[DEBUG][TRUMPUSD] price=9.450502, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
-❌ SELL BLOCKED for TRUMPUSD: would yield non-positive profit ($-3.10)
-[DEBUG][ADAUSD] Buy check: price=0.787791815, costBasis=1.1142061, trend=uptrend, atr=0.00000849428571428731, buyThresh=1.5
-💤 Strategy decision for ADAUSD: HOLD @ $0.78779181
-[DEBUG][ADAUSD] price=0.787791815, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][SOLUSD] Buy check: price=182.6033515, costBasis=178.33, trend=uptrend, atr=0.0029623714285703174, buyThresh=1.5
-📈 Strategy decision for SOLUSD: SELL @ $182.60335150
-[DEBUG][SOLUSD] price=182.6033515, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
-🔴 SELL executed: 0.250140 SOLUSD @ $182.60335150 P/L $0.15  Locked: $0.12
-
-After SELL SOLUSD grid:
-  [1] price=178.33000000, amount=0.010000, time=7/31/2025, 6:01:28 AM
-
-After SELL SOLUSD grid:
-  [1] price=178.33000000, amount=0.010000, time=7/31/2025, 6:01:28 AM
-[DEBUG][LTCUSD] Buy check: price=111.17558485, costBasis=139.67, trend=uptrend, atr=0.007792907142859106, buyThresh=1.5
-💤 Strategy decision for LTCUSD: HOLD @ $111.17558485
-[DEBUG][LTCUSD] price=111.17558485, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][DOGEUSD] Buy check: price=0.225282425, costBasis=0.397761, trend=uptrend, atr=0.0000047307142857143185, buyThresh=1.5
-💤 Strategy decision for DOGEUSD: HOLD @ $0.22528243
-[DEBUG][DOGEUSD] price=0.225282425, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][SHIBUSD] Buy check: price=0.00001316, costBasis=0.00001434, trend=uptrend, atr=7.142857142858285e-10, buyThresh=1.5
-💤 Strategy decision for SHIBUSD: HOLD @ $0.00001316
-[DEBUG][SHIBUSD] price=0.00001316, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
-[DEBUG][LINKUSD] Buy check: price=18.19641065, costBasis=17.31, trend=uptrend, atr=0.00015907142857126848, buyThresh=1.5
-📈 Strategy decision for LINKUSD: SELL @ $18.19641065
-[DEBUG][LINKUSD] price=18.19641065, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
-🔴 SELL executed: 0.428797 LINKUSD @ $18.19641065 P/L $0.23  Locked: $0.18
+  [1] price=3.10000000, amount=0.010000, time=7/31/2025, 6:25:30 AM
+[DEBUG][TRUMPUSD] Buy check: price=9.42522295, costBasis=9.38, trend=uptrend, atr=0.0001378428571428003, buyThresh=1.5
+📈 Strategy decision for TRUMPUSD: SELL @ $9.42522295
+[DEBUG][TRUMPUSD] price=9.42522295, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for TRUMPUSD: would yield non-positive profit ($-3.75)
+[DEBUG][ADAUSD] Buy check: price=0.784673835, costBasis=1.1142061, trend=uptrend, atr=0.000019081428571432468, buyThresh=1.5
+💤 Strategy decision for ADAUSD: HOLD @ $0.78467383
+[DEBUG][ADAUSD] price=0.784673835, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SOLUSD] Buy check: price=181.9603135, costBasis=178.33, trend=uptrend, atr=0.0003488142857130632, buyThresh=1.5
+📈 Strategy decision for SOLUSD: SELL @ $181.96031350
+[DEBUG][SOLUSD] price=181.9603135, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for SOLUSD: would yield non-positive profit ($0.00)
+[DEBUG][LTCUSD] Buy check: price=110.8515402, costBasis=139.67, trend=uptrend, atr=0.0016978642857148024, buyThresh=1.5
+💤 Strategy decision for LTCUSD: HOLD @ $110.85154020
+[DEBUG][LTCUSD] price=110.8515402, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][DOGEUSD] Buy check: price=0.22426785, costBasis=0.397761, trend=uptrend, atr=0.0000020949999999956122, buyThresh=1.5
+💤 Strategy decision for DOGEUSD: HOLD @ $0.22426785
+[DEBUG][DOGEUSD] price=0.22426785, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SHIBUSD] Buy check: price=0.00001313, costBasis=0.00001434, trend=uptrend, atr=1.428571428571415e-9, buyThresh=1.5
+💤 Strategy decision for SHIBUSD: HOLD @ $0.00001313
+[DEBUG][SHIBUSD] price=0.00001313, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][LINKUSD] Buy check: price=18.1538312, costBasis=17.31, trend=uptrend, atr=0.001095245714285653, buyThresh=1.5
+📈 Strategy decision for LINKUSD: SELL @ $18.15383120
+[DEBUG][LINKUSD] price=18.1538312, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
+🔴 SELL executed: 0.428797 LINKUSD @ $18.15383120 P/L $0.21  Locked: $0.17
 
 After SELL LINKUSD grid:
-  [1] price=17.31000000, amount=0.010000, time=7/31/2025, 6:01:28 AM
+  [1] price=17.31000000, amount=0.010000, time=7/31/2025, 6:25:30 AM
 
 After SELL LINKUSD grid:
-  [1] price=17.31000000, amount=0.010000, time=7/31/2025, 6:01:28 AM
-[DEBUG][AVAXUSD] Buy check: price=24.09, costBasis=24, trend=uptrend, atr=0.000013749999999796663, buyThresh=1.5
-📈 Strategy decision for AVAXUSD: SELL @ $24.09000000
-[DEBUG][AVAXUSD] price=24.09, costBasis=24, trend=unknown, delta=n/a, atr=n/a
+  [1] price=17.31000000, amount=0.010000, time=7/31/2025, 6:25:30 AM
+[DEBUG][AVAXUSD] Buy check: price=24.00653825, costBasis=24, trend=uptrend, atr=0.0012185357142853498, buyThresh=1.5
+📈 Strategy decision for AVAXUSD: SELL @ $24.00653825
+[DEBUG][AVAXUSD] price=24.00653825, costBasis=24, trend=unknown, delta=n/a, atr=n/a
 ❌ SELL BLOCKED for AVAXUSD: would yield non-positive profit ($-0.02)
-[DEBUG][COMPUSD] Buy check: price=47.90954635, costBasis=46.79, trend=uptrend, atr=0.002845142857143149, buyThresh=1.5
-📈 Strategy decision for COMPUSD: SELL @ $47.90954635
-[DEBUG][COMPUSD] price=47.90954635, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][COMPUSD] Buy check: price=47.855142195, costBasis=46.79, trend=uptrend, atr=0.00016336785714291376, buyThresh=1.5
+📈 Strategy decision for COMPUSD: SELL @ $47.85514219
+[DEBUG][COMPUSD] price=47.855142195, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
 ❌ SELL BLOCKED for COMPUSD: would yield non-positive profit ($0.00)
-🔒 PROFIT LOCKED: $107.94 moved to locked cash. [7/31/2025, 6:02:00 AM]
+🔒 PROFIT LOCKED: $80.17 moved to locked cash. [7/31/2025, 6:26:02 AM]
 
 === REALIZED P/L STATUS ===
 Buys:     0
-Sells:    6
+Sells:    5
 StopLoss: 0
-Realized Profit:   $26.99 (avg $4.50)
-Unrealized P/L:   $64.99
-Cash: $7553.60, Crypto: $6640.46, Locked: $215.88
+Realized Profit:   $20.04 (avg $4.01)
+Unrealized P/L:   $11.95
+Cash: $7474.27, Crypto: $6671.16, Locked: $160.33
+[DEBUG][BTCUSD] Buy check: price=118501.0008775, costBasis=117175, trend=uptrend, atr=4.9786921407150135, buyThresh=1.5
+📈 Strategy decision for BTCUSD: SELL @ $118501.00087750
+[DEBUG][BTCUSD] price=118501.0008775, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BTCUSD: would yield non-positive profit ($-29.06)
+[DEBUG][BONKUSD] Buy check: price=0.000029465, costBasis=0.0000284, trend=uptrend, atr=1.142857142857132e-8, buyThresh=1.5
+📈 Strategy decision for BONKUSD: SELL @ $0.00002946
+[DEBUG][BONKUSD] price=0.000029465, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BONKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][ETHUSD] Buy check: price=3858.33396095, costBasis=3749.53, trend=uptrend, atr=0.191206605714342, buyThresh=1.5
+📈 Strategy decision for ETHUSD: SELL @ $3858.33396095
+[DEBUG][ETHUSD] price=3858.33396095, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for ETHUSD: cannot sell below minimum holding (0.01)
+[DEBUG][XLMUSD] Buy check: price=0.4264017, costBasis=0.41051, trend=uptrend, atr=0.00006136714285714939, buyThresh=1.5
+📈 Strategy decision for XLMUSD: SELL @ $0.42640170
+[DEBUG][XLMUSD] price=0.4264017, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XLMUSD: cannot sell below minimum holding (0.01)
+[DEBUG][POPCATUSD] Buy check: price=0.342712355, costBasis=0.4925, trend=uptrend, atr=0.000054530714285714955, buyThresh=1.5
+💤 Strategy decision for POPCATUSD: HOLD @ $0.34271236
+[DEBUG][POPCATUSD] price=0.342712355, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][PEPEUSD] Buy check: price=0.000011585, costBasis=0.00002342, trend=uptrend, atr=7.142857142858285e-10, buyThresh=1.5
+💤 Strategy decision for PEPEUSD: HOLD @ $0.00001159
+[DEBUG][PEPEUSD] price=0.000011585, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XRPUSD] Buy check: price=3.163420575, costBasis=3.1, trend=uptrend, atr=0.0001494035714286111, buyThresh=1.5
+📈 Strategy decision for XRPUSD: SELL @ $3.16342057
+[DEBUG][XRPUSD] price=3.163420575, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XRPUSD: cannot sell below minimum holding (0.01)
+[DEBUG][TRUMPUSD] Buy check: price=9.4233137, costBasis=9.38, trend=uptrend, atr=0.0004105928571428917, buyThresh=1.5
+📈 Strategy decision for TRUMPUSD: SELL @ $9.42331370
+[DEBUG][TRUMPUSD] price=9.4233137, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for TRUMPUSD: would yield non-positive profit ($-3.80)
+[DEBUG][ADAUSD] Buy check: price=0.784560745, costBasis=1.1142061, trend=uptrend, atr=0.00003471285714286486, buyThresh=1.5
+💤 Strategy decision for ADAUSD: HOLD @ $0.78456074
+[DEBUG][ADAUSD] price=0.784560745, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SOLUSD] Buy check: price=181.91436, costBasis=178.33, trend=uptrend, atr=0.006913600000002264, buyThresh=1.5
+📈 Strategy decision for SOLUSD: SELL @ $181.91436000
+[DEBUG][SOLUSD] price=181.91436, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for SOLUSD: would yield non-positive profit ($-0.02)
+[DEBUG][LTCUSD] Buy check: price=110.84734704, costBasis=139.67, trend=uptrend, atr=0.002296887142857632, buyThresh=1.5
+💤 Strategy decision for LTCUSD: HOLD @ $110.84734704
+[DEBUG][LTCUSD] price=110.84734704, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][DOGEUSD] Buy check: price=0.22426268, costBasis=0.397761, trend=uptrend, atr=0.000002656428571426054, buyThresh=1.5
+💤 Strategy decision for DOGEUSD: HOLD @ $0.22426268
+[DEBUG][DOGEUSD] price=0.22426268, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SHIBUSD] Buy check: price=0.000013125, costBasis=0.00001434, trend=uptrend, atr=2.1428571428570015e-9, buyThresh=1.5
+💤 Strategy decision for SHIBUSD: HOLD @ $0.00001313
+[DEBUG][SHIBUSD] price=0.000013125, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][LINKUSD] Buy check: price=18.145781475, costBasis=17.31, trend=uptrend, atr=0.002245206428571273, buyThresh=1.5
+📈 Strategy decision for LINKUSD: SELL @ $18.14578147
+[DEBUG][LINKUSD] price=18.145781475, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for LINKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][AVAXUSD] Buy check: price=23.9980085, costBasis=24, trend=uptrend, atr=0.0024370714285706996, buyThresh=1.5
+💤 Strategy decision for AVAXUSD: HOLD @ $23.99800850
+[DEBUG][AVAXUSD] price=23.9980085, costBasis=24, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][COMPUSD] Buy check: price=47.851574945, costBasis=46.79, trend=uptrend, atr=0.0006729749999995047, buyThresh=1.5
+📈 Strategy decision for COMPUSD: SELL @ $47.85157495
+[DEBUG][COMPUSD] price=47.851574945, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for COMPUSD: would yield non-positive profit ($0.00)
+
+=== REALIZED P/L STATUS ===
+Buys:     0
+Sells:    5
+StopLoss: 0
+Realized Profit:   $20.04 (avg $4.01)
+Unrealized P/L:   $10.64
+Cash: $7474.27, Crypto: $6669.85, Locked: $160.33
+[DEBUG][BTCUSD] Buy check: price=118500.5433275, costBasis=117175, trend=uptrend, atr=5.044056426430221, buyThresh=1.5
+📈 Strategy decision for BTCUSD: SELL @ $118500.54332750
+[DEBUG][BTCUSD] price=118500.5433275, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BTCUSD: would yield non-positive profit ($-29.07)
+[DEBUG][BONKUSD] Buy check: price=0.00002945, costBasis=0.0000284, trend=uptrend, atr=1.357142857142832e-8, buyThresh=1.5
+📈 Strategy decision for BONKUSD: SELL @ $0.00002945
+[DEBUG][BONKUSD] price=0.00002945, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BONKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][ETHUSD] Buy check: price=3857.918797525, costBasis=3749.53, trend=uptrend, atr=0.250515659285676, buyThresh=1.5
+📈 Strategy decision for ETHUSD: SELL @ $3857.91879753
+[DEBUG][ETHUSD] price=3857.918797525, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for ETHUSD: cannot sell below minimum holding (0.01)
+[DEBUG][XLMUSD] Buy check: price=0.42591345, costBasis=0.41051, trend=uptrend, atr=0.0001287692857142824, buyThresh=1.5
+📈 Strategy decision for XLMUSD: SELL @ $0.42591345
+[DEBUG][XLMUSD] price=0.42591345, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XLMUSD: cannot sell below minimum holding (0.01)
+[DEBUG][POPCATUSD] Buy check: price=0.34265379, costBasis=0.4925, trend=uptrend, atr=0.00006289714285714501, buyThresh=1.5
+💤 Strategy decision for POPCATUSD: HOLD @ $0.34265379
+[DEBUG][POPCATUSD] price=0.34265379, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][PEPEUSD] Buy check: price=0.000011585, costBasis=0.00002342, trend=uptrend, atr=7.142857142858285e-10, buyThresh=1.5
+💤 Strategy decision for PEPEUSD: HOLD @ $0.00001159
+[DEBUG][PEPEUSD] price=0.000011585, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XRPUSD] Buy check: price=3.1631, costBasis=3.1, trend=uptrend, atr=0.00019520000000003028, buyThresh=1.5
+📈 Strategy decision for XRPUSD: SELL @ $3.16310000
+[DEBUG][XRPUSD] price=3.1631, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XRPUSD: cannot sell below minimum holding (0.01)
+[DEBUG][TRUMPUSD] Buy check: price=9.423936, costBasis=9.38, trend=uptrend, atr=0.0004994928571428707, buyThresh=1.5
+📈 Strategy decision for TRUMPUSD: SELL @ $9.42393600
+[DEBUG][TRUMPUSD] price=9.423936, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for TRUMPUSD: would yield non-positive profit ($-3.78)
+[DEBUG][ADAUSD] Buy check: price=0.784500175, costBasis=1.1142061, trend=uptrend, atr=0.00004284142857142419, buyThresh=1.5
+💤 Strategy decision for ADAUSD: HOLD @ $0.78450018
+[DEBUG][ADAUSD] price=0.784500175, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SOLUSD] Buy check: price=181.90719565, costBasis=178.33, trend=uptrend, atr=0.007937078571428304, buyThresh=1.5
+📈 Strategy decision for SOLUSD: SELL @ $181.90719565
+[DEBUG][SOLUSD] price=181.90719565, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for SOLUSD: would yield non-positive profit ($-0.02)
+[DEBUG][LTCUSD] Buy check: price=110.8674383, costBasis=139.67, trend=uptrend, atr=0.005167067142857766, buyThresh=1.5
+💤 Strategy decision for LTCUSD: HOLD @ $110.86743830
+[DEBUG][LTCUSD] price=110.8674383, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][DOGEUSD] Buy check: price=0.22424057, costBasis=0.397761, trend=uptrend, atr=0.000005814999999996319, buyThresh=1.5
+💤 Strategy decision for DOGEUSD: HOLD @ $0.22424057
+[DEBUG][DOGEUSD] price=0.22424057, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SHIBUSD] Buy check: price=0.000013125, costBasis=0.00001434, trend=uptrend, atr=2.1428571428570015e-9, buyThresh=1.5
+💤 Strategy decision for SHIBUSD: HOLD @ $0.00001313
+[DEBUG][SHIBUSD] price=0.000013125, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][LINKUSD] Buy check: price=18.15384845, costBasis=17.31, trend=uptrend, atr=0.003397615714285556, buyThresh=1.5
+📈 Strategy decision for LINKUSD: SELL @ $18.15384845
+[DEBUG][LINKUSD] price=18.15384845, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for LINKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][AVAXUSD] Buy check: price=23.9980085, costBasis=24, trend=uptrend, atr=0.0024370714285706996, buyThresh=1.5
+💤 Strategy decision for AVAXUSD: HOLD @ $23.99800850
+[DEBUG][AVAXUSD] price=23.9980085, costBasis=24, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][COMPUSD] Buy check: price=47.84468578, costBasis=46.79, trend=uptrend, atr=0.0016571414285715086, buyThresh=1.5
+📈 Strategy decision for COMPUSD: SELL @ $47.84468578
+[DEBUG][COMPUSD] price=47.84468578, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for COMPUSD: would yield non-positive profit ($0.00)
+[DEBUG][BTCUSD] Buy check: price=118499.12158773, costBasis=117175, trend=uptrend, atr=1.8179801278581311, buyThresh=1.5
+📈 Strategy decision for BTCUSD: SELL @ $118499.12158773
+[DEBUG][BTCUSD] price=118499.12158773, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BTCUSD: would yield non-positive profit ($-29.11)
+[DEBUG][BONKUSD] Buy check: price=0.00002946, costBasis=0.0000284, trend=uptrend, atr=1.4285714285713666e-8, buyThresh=1.5
+📈 Strategy decision for BONKUSD: SELL @ $0.00002946
+[DEBUG][BONKUSD] price=0.00002946, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BONKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][ETHUSD] Buy check: price=3857.7568324, costBasis=3749.53, trend=uptrend, atr=0.19242772428573776, buyThresh=1.5
+📈 Strategy decision for ETHUSD: SELL @ $3857.75683240
+[DEBUG][ETHUSD] price=3857.7568324, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for ETHUSD: cannot sell below minimum holding (0.01)
+[DEBUG][XLMUSD] Buy check: price=0.4260236, costBasis=0.41051, trend=uptrend, atr=0.00010099999999999396, buyThresh=1.5
+📈 Strategy decision for XLMUSD: SELL @ $0.42602360
+[DEBUG][XLMUSD] price=0.4260236, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XLMUSD: cannot sell below minimum holding (0.01)
+[DEBUG][POPCATUSD] Buy check: price=0.342695405, costBasis=0.4925, trend=uptrend, atr=0.00004025999999999831, buyThresh=1.5
+💤 Strategy decision for POPCATUSD: HOLD @ $0.34269541
+[DEBUG][POPCATUSD] price=0.342695405, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][PEPEUSD] Buy check: price=0.000011585, costBasis=0.00002342, trend=uptrend, atr=7.142857142858285e-10, buyThresh=1.5
+💤 Strategy decision for PEPEUSD: HOLD @ $0.00001159
+[DEBUG][PEPEUSD] price=0.000011585, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XRPUSD] Buy check: price=3.16292, costBasis=3.1, trend=uptrend, atr=0.00010795714285714655, buyThresh=1.5
+📈 Strategy decision for XRPUSD: SELL @ $3.16292000
+[DEBUG][XRPUSD] price=3.16292, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XRPUSD: cannot sell below minimum holding (0.01)
+[DEBUG][TRUMPUSD] Buy check: price=9.4243026, costBasis=9.38, trend=uptrend, atr=0.0004140214285716886, buyThresh=1.5
+📈 Strategy decision for TRUMPUSD: SELL @ $9.42430260
+[DEBUG][TRUMPUSD] price=9.4243026, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for TRUMPUSD: would yield non-positive profit ($-3.77)
+[DEBUG][ADAUSD] Buy check: price=0.78458193, costBasis=1.1142061, trend=uptrend, atr=0.00003648785714284651, buyThresh=1.5
+💤 Strategy decision for ADAUSD: HOLD @ $0.78458193
+[DEBUG][ADAUSD] price=0.78458193, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SOLUSD] Buy check: price=181.94932055, costBasis=178.33, trend=uptrend, atr=0.01360610714285875, buyThresh=1.5
+📈 Strategy decision for SOLUSD: SELL @ $181.94932055
+[DEBUG][SOLUSD] price=181.94932055, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for SOLUSD: would yield non-positive profit ($-0.01)
+[DEBUG][LTCUSD] Buy check: price=110.8094142, costBasis=139.67, trend=uptrend, atr=0.011758359999999714, buyThresh=1.5
+💤 Strategy decision for LTCUSD: HOLD @ $110.80941420
+[DEBUG][LTCUSD] price=110.8094142, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][DOGEUSD] Buy check: price=0.22417108, costBasis=0.397761, trend=uptrend, atr=0.000013824285714285147, buyThresh=1.5
+💤 Strategy decision for DOGEUSD: HOLD @ $0.22417108
+[DEBUG][DOGEUSD] price=0.22417108, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SHIBUSD] Buy check: price=0.000013125, costBasis=0.00001434, trend=uptrend, atr=7.142857142855864e-10, buyThresh=1.5
+💤 Strategy decision for SHIBUSD: HOLD @ $0.00001313
+[DEBUG][SHIBUSD] price=0.000013125, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][LINKUSD] Buy check: price=18.1539226, costBasis=17.31, trend=uptrend, atr=0.002312978571428711, buyThresh=1.5
+📈 Strategy decision for LINKUSD: SELL @ $18.15392260
+[DEBUG][LINKUSD] price=18.1539226, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for LINKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][AVAXUSD] Buy check: price=24.00909808, costBasis=24, trend=uptrend, atr=0.002802761428571086, buyThresh=1.5
+📈 Strategy decision for AVAXUSD: SELL @ $24.00909808
+[DEBUG][AVAXUSD] price=24.00909808, costBasis=24, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for AVAXUSD: would yield non-positive profit ($-0.02)
+[DEBUG][COMPUSD] Buy check: price=47.82783591, costBasis=46.79, trend=uptrend, atr=0.003900897857143093, buyThresh=1.5
+📈 Strategy decision for COMPUSD: SELL @ $47.82783591
+[DEBUG][COMPUSD] price=47.82783591, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for COMPUSD: would yield non-positive profit ($0.00)
+[DEBUG][BTCUSD] Buy check: price=118479.226894055, costBasis=117175, trend=uptrend, atr=3.110569063571997, buyThresh=1.5
+📈 Strategy decision for BTCUSD: SELL @ $118479.22689405
+[DEBUG][BTCUSD] price=118479.226894055, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BTCUSD: would yield non-positive profit ($-29.65)
+[DEBUG][BONKUSD] Buy check: price=0.000029455, costBasis=0.0000284, trend=uptrend, atr=4.285714285714003e-9, buyThresh=1.5
+📈 Strategy decision for BONKUSD: SELL @ $0.00002945
+[DEBUG][BONKUSD] price=0.000029455, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BONKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][ETHUSD] Buy check: price=3857.15460255, costBasis=3749.53, trend=uptrend, atr=0.1684797714285326, buyThresh=1.5
+📈 Strategy decision for ETHUSD: SELL @ $3857.15460255
+[DEBUG][ETHUSD] price=3857.15460255, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for ETHUSD: cannot sell below minimum holding (0.01)
+[DEBUG][XLMUSD] Buy check: price=0.42549505, costBasis=0.41051, trend=uptrend, atr=0.00016099285714285143, buyThresh=1.5
+📈 Strategy decision for XLMUSD: SELL @ $0.42549505
+[DEBUG][XLMUSD] price=0.42549505, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XLMUSD: cannot sell below minimum holding (0.01)
+[DEBUG][POPCATUSD] Buy check: price=0.342592345, costBasis=0.4925, trend=uptrend, atr=0.000029034285714284775, buyThresh=1.5
+💤 Strategy decision for POPCATUSD: HOLD @ $0.34259235
+[DEBUG][POPCATUSD] price=0.342592345, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][PEPEUSD] Buy check: price=0.000011585, costBasis=0.00002342, trend=uptrend, atr=0.01, buyThresh=1.5
+💤 Strategy decision for PEPEUSD: HOLD @ $0.00001159
+[DEBUG][PEPEUSD] price=0.000011585, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XRPUSD] Buy check: price=3.16259, costBasis=3.1, trend=uptrend, atr=0.00011865357142859523, buyThresh=1.5
+📈 Strategy decision for XRPUSD: SELL @ $3.16259000
+[DEBUG][XRPUSD] price=3.16259, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XRPUSD: cannot sell below minimum holding (0.01)
+[DEBUG][TRUMPUSD] Buy check: price=9.4233485, costBasis=9.38, trend=uptrend, atr=0.00027757142857178153, buyThresh=1.5
+📈 Strategy decision for TRUMPUSD: SELL @ $9.42334850
+[DEBUG][TRUMPUSD] price=9.4233485, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for TRUMPUSD: would yield non-positive profit ($-3.80)
+[DEBUG][ADAUSD] Buy check: price=0.784323045, costBasis=1.1142061, trend=uptrend, atr=0.00005731571428568838, buyThresh=1.5
+💤 Strategy decision for ADAUSD: HOLD @ $0.78432305
+[DEBUG][ADAUSD] price=0.784323045, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SOLUSD] Buy check: price=181.90444845, costBasis=178.33, trend=uptrend, atr=0.01345162142857248, buyThresh=1.5
+📈 Strategy decision for SOLUSD: SELL @ $181.90444845
+[DEBUG][SOLUSD] price=181.90444845, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for SOLUSD: would yield non-positive profit ($-0.02)
+[DEBUG][LTCUSD] Buy check: price=110.7872469, costBasis=139.67, trend=uptrend, atr=0.014326094285714979, buyThresh=1.5
+💤 Strategy decision for LTCUSD: HOLD @ $110.78724690
+[DEBUG][LTCUSD] price=110.7872469, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][DOGEUSD] Buy check: price=0.22410432, costBasis=0.397761, trend=uptrend, atr=0.00002262285714285661, buyThresh=1.5
+💤 Strategy decision for DOGEUSD: HOLD @ $0.22410432
+[DEBUG][DOGEUSD] price=0.22410432, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SHIBUSD] Buy check: price=0.00001312, costBasis=0.00001434, trend=uptrend, atr=7.142857142858285e-10, buyThresh=1.5
+💤 Strategy decision for SHIBUSD: HOLD @ $0.00001312
+[DEBUG][SHIBUSD] price=0.00001312, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][LINKUSD] Buy check: price=18.14515819, costBasis=17.31, trend=uptrend, atr=0.0024150764285718446, buyThresh=1.5
+📈 Strategy decision for LINKUSD: SELL @ $18.14515819
+[DEBUG][LINKUSD] price=18.14515819, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for LINKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][AVAXUSD] Buy check: price=24.00909808, costBasis=24, trend=uptrend, atr=0.0015842257142857363, buyThresh=1.5
+📈 Strategy decision for AVAXUSD: SELL @ $24.00909808
+[DEBUG][AVAXUSD] price=24.00909808, costBasis=24, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for AVAXUSD: would yield non-positive profit ($-0.02)
+[DEBUG][COMPUSD] Buy check: price=47.82265128, costBasis=46.79, trend=uptrend, atr=0.004131952142857236, buyThresh=1.5
+📈 Strategy decision for COMPUSD: SELL @ $47.82265128
+[DEBUG][COMPUSD] price=47.82265128, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for COMPUSD: would yield non-positive profit ($0.00)
+[DEBUG][BTCUSD] Buy check: price=118463.27972839, costBasis=117175, trend=uptrend, atr=5.323371301427999, buyThresh=1.5
+📈 Strategy decision for BTCUSD: SELL @ $118463.27972839
+[DEBUG][BTCUSD] price=118463.27972839, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BTCUSD: would yield non-positive profit ($-30.09)
+[DEBUG][BONKUSD] Buy check: price=0.000029435, costBasis=0.0000284, trend=uptrend, atr=4.999999999999831e-9, buyThresh=1.5
+📈 Strategy decision for BONKUSD: SELL @ $0.00002943
+[DEBUG][BONKUSD] price=0.000029435, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BONKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][ETHUSD] Buy check: price=3856.63376662, costBasis=3749.53, trend=uptrend, atr=0.18357584357142645, buyThresh=1.5
+📈 Strategy decision for ETHUSD: SELL @ $3856.63376662
+[DEBUG][ETHUSD] price=3856.63376662, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for ETHUSD: cannot sell below minimum holding (0.01)
+[DEBUG][XLMUSD] Buy check: price=0.4251413, costBasis=0.41051, trend=uptrend, atr=0.0001417785714285683, buyThresh=1.5
+📈 Strategy decision for XLMUSD: SELL @ $0.42514130
+[DEBUG][XLMUSD] price=0.4251413, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XLMUSD: cannot sell below minimum holding (0.01)
+[DEBUG][POPCATUSD] Buy check: price=0.342449905, costBasis=0.4925, trend=uptrend, atr=0.00004101642857142921, buyThresh=1.5
+💤 Strategy decision for POPCATUSD: HOLD @ $0.34244990
+[DEBUG][POPCATUSD] price=0.342449905, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][PEPEUSD] Buy check: price=0.00001158, costBasis=0.00002342, trend=uptrend, atr=7.142857142858285e-10, buyThresh=1.5
+💤 Strategy decision for PEPEUSD: HOLD @ $0.00001158
+[DEBUG][PEPEUSD] price=0.00001158, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XRPUSD] Buy check: price=3.16271291, costBasis=3.1, trend=uptrend, atr=0.00009041571428580752, buyThresh=1.5
+📈 Strategy decision for XRPUSD: SELL @ $3.16271291
+[DEBUG][XRPUSD] price=3.16271291, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XRPUSD: cannot sell below minimum holding (0.01)
+[DEBUG][TRUMPUSD] Buy check: price=9.4228082, costBasis=9.38, trend=uptrend, atr=0.00026585714285738097, buyThresh=1.5
+📈 Strategy decision for TRUMPUSD: SELL @ $9.42280820
+[DEBUG][TRUMPUSD] price=9.4228082, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for TRUMPUSD: would yield non-positive profit ($-3.81)
+[DEBUG][ADAUSD] Buy check: price=0.78408338, costBasis=1.1142061, trend=uptrend, atr=0.0000829007142857068, buyThresh=1.5
+💤 Strategy decision for ADAUSD: HOLD @ $0.78408338
+[DEBUG][ADAUSD] price=0.78408338, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SOLUSD] Buy check: price=181.85438, costBasis=178.33, trend=uptrend, atr=0.01958077857143183, buyThresh=1.5
+📈 Strategy decision for SOLUSD: SELL @ $181.85438000
+[DEBUG][SOLUSD] price=181.85438, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for SOLUSD: would yield non-positive profit ($-0.03)
+[DEBUG][LTCUSD] Buy check: price=110.77330315, costBasis=139.67, trend=uptrend, atr=0.013447878571428516, buyThresh=1.5
+💤 Strategy decision for LTCUSD: HOLD @ $110.77330315
+[DEBUG][LTCUSD] price=110.77330315, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][DOGEUSD] Buy check: price=0.22406465, costBasis=0.397761, trend=uptrend, atr=0.00002513142857142801, buyThresh=1.5
+💤 Strategy decision for DOGEUSD: HOLD @ $0.22406465
+[DEBUG][DOGEUSD] price=0.22406465, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SHIBUSD] Buy check: price=0.000013115, costBasis=0.00001434, trend=uptrend, atr=1.428571428571415e-9, buyThresh=1.5
+💤 Strategy decision for SHIBUSD: HOLD @ $0.00001312
+[DEBUG][SHIBUSD] price=0.000013115, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][LINKUSD] Buy check: price=18.14528612, costBasis=17.31, trend=uptrend, atr=0.0012809271428574829, buyThresh=1.5
+📈 Strategy decision for LINKUSD: SELL @ $18.14528612
+[DEBUG][LINKUSD] price=18.14528612, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for LINKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][AVAXUSD] Buy check: price=23.99750425, costBasis=24, trend=uptrend, atr=0.0032404871428575177, buyThresh=1.5
+💤 Strategy decision for AVAXUSD: HOLD @ $23.99750425
+[DEBUG][AVAXUSD] price=23.99750425, costBasis=24, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][COMPUSD] Buy check: price=47.819861485, costBasis=46.79, trend=uptrend, atr=0.003546327857143134, buyThresh=1.5
+📈 Strategy decision for COMPUSD: SELL @ $47.81986148
+[DEBUG][COMPUSD] price=47.819861485, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for COMPUSD: would yield non-positive profit ($0.00)
+[DEBUG][BTCUSD] Buy check: price=118447.069835, costBasis=117175, trend=uptrend, atr=7.4359646757137465, buyThresh=1.5
+📈 Strategy decision for BTCUSD: SELL @ $118447.06983500
+[DEBUG][BTCUSD] price=118447.069835, costBasis=117175, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BTCUSD: would yield non-positive profit ($-30.53)
+[DEBUG][BONKUSD] Buy check: price=0.000029445, costBasis=0.0000284, trend=uptrend, atr=5.000000000000315e-9, buyThresh=1.5
+📈 Strategy decision for BONKUSD: SELL @ $0.00002945
+[DEBUG][BONKUSD] price=0.000029445, costBasis=0.0000284, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for BONKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][ETHUSD] Buy check: price=3856.48526264, costBasis=3749.53, trend=uptrend, atr=0.181652822857099, buyThresh=1.5
+📈 Strategy decision for ETHUSD: SELL @ $3856.48526264
+[DEBUG][ETHUSD] price=3856.48526264, costBasis=3749.53, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for ETHUSD: cannot sell below minimum holding (0.01)
+[DEBUG][XLMUSD] Buy check: price=0.425017, costBasis=0.41051, trend=uptrend, atr=0.00014380000000000344, buyThresh=1.5
+📈 Strategy decision for XLMUSD: SELL @ $0.42501700
+[DEBUG][XLMUSD] price=0.425017, costBasis=0.41051, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XLMUSD: cannot sell below minimum holding (0.01)
+[DEBUG][POPCATUSD] Buy check: price=0.34224981, costBasis=0.4925, trend=uptrend, atr=0.00006365642857143155, buyThresh=1.5
+💤 Strategy decision for POPCATUSD: HOLD @ $0.34224981
+[DEBUG][POPCATUSD] price=0.34224981, costBasis=0.4925, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][PEPEUSD] Buy check: price=0.00001158, costBasis=0.00002342, trend=uptrend, atr=7.142857142858285e-10, buyThresh=1.5
+💤 Strategy decision for PEPEUSD: HOLD @ $0.00001158
+[DEBUG][PEPEUSD] price=0.00001158, costBasis=0.00002342, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][XRPUSD] Buy check: price=3.16217, costBasis=3.1, trend=uptrend, atr=0.00014226000000012412, buyThresh=1.5
+📈 Strategy decision for XRPUSD: SELL @ $3.16217000
+[DEBUG][XRPUSD] price=3.16217, costBasis=3.1, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for XRPUSD: cannot sell below minimum holding (0.01)
+[DEBUG][TRUMPUSD] Buy check: price=9.4157646, costBasis=9.38, trend=uptrend, atr=0.0012197142857144985, buyThresh=1.5
+📈 Strategy decision for TRUMPUSD: SELL @ $9.41576460
+[DEBUG][TRUMPUSD] price=9.4157646, costBasis=9.38, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for TRUMPUSD: would yield non-positive profit ($-3.99)
+[DEBUG][ADAUSD] Buy check: price=0.78395152, costBasis=1.1142061, trend=uptrend, atr=0.00009005857142856717, buyThresh=1.5
+💤 Strategy decision for ADAUSD: HOLD @ $0.78395152
+[DEBUG][ADAUSD] price=0.78395152, costBasis=1.1142061, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SOLUSD] Buy check: price=181.80640965, costBasis=178.33, trend=uptrend, atr=0.020415842857143422, buyThresh=1.5
+📈 Strategy decision for SOLUSD: SELL @ $181.80640965
+[DEBUG][SOLUSD] price=181.80640965, costBasis=178.33, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for SOLUSD: would yield non-positive profit ($-0.04)
+[DEBUG][LTCUSD] Buy check: price=110.70103035, costBasis=139.67, trend=uptrend, atr=0.015483407142858547, buyThresh=1.5
+💤 Strategy decision for LTCUSD: HOLD @ $110.70103035
+[DEBUG][LTCUSD] price=110.70103035, costBasis=139.67, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][DOGEUSD] Buy check: price=0.224058465, costBasis=0.397761, trend=uptrend, atr=0.000016087857142854656, buyThresh=1.5
+💤 Strategy decision for DOGEUSD: HOLD @ $0.22405847
+[DEBUG][DOGEUSD] price=0.224058465, costBasis=0.397761, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][SHIBUSD] Buy check: price=0.00001312, costBasis=0.00001434, trend=uptrend, atr=2.1428571428570015e-9, buyThresh=1.5
+💤 Strategy decision for SHIBUSD: HOLD @ $0.00001312
+[DEBUG][SHIBUSD] price=0.00001312, costBasis=0.00001434, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][LINKUSD] Buy check: price=18.1507257, costBasis=17.31, trend=uptrend, atr=0.0020474171428571503, buyThresh=1.5
+📈 Strategy decision for LINKUSD: SELL @ $18.15072570
+[DEBUG][LINKUSD] price=18.1507257, costBasis=17.31, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for LINKUSD: cannot sell below minimum holding (0.01)
+[DEBUG][AVAXUSD] Buy check: price=23.989150245, costBasis=24, trend=uptrend, atr=0.0028496907142857098, buyThresh=1.5
+💤 Strategy decision for AVAXUSD: HOLD @ $23.98915025
+[DEBUG][AVAXUSD] price=23.989150245, costBasis=24, trend=unknown, delta=n/a, atr=n/a
+[DEBUG][COMPUSD] Buy check: price=47.830683595, costBasis=46.79, trend=uptrend, atr=0.002685219285715285, buyThresh=1.5
+📈 Strategy decision for COMPUSD: SELL @ $47.83068360
+[DEBUG][COMPUSD] price=47.830683595, costBasis=46.79, trend=unknown, delta=n/a, atr=n/a
+❌ SELL BLOCKED for COMPUSD: would yield non-positive profit ($0.00)
+
+=== REALIZED P/L STATUS ===
+Buys:     0
+Sells:    5
+StopLoss: 0
+Realized Profit:   $20.04 (avg $4.01)
+Unrealized P/L:   $6.78
+Cash: $7474.27, Crypto: $6665.99, Locked: $160.33
 
 === TOTAL PORTFOLIO SUMMARY ===
