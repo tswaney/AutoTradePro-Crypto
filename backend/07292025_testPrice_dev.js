@@ -761,6 +761,17 @@ async function runStrategyForSymbol(symbol) {
     const stopLossPrice = lot.price * (1 - stopLossPct / 100);
     const minHold = parseFloat(process.env.MIN_HOLD_AMOUNT) || 0.01;
     let sellableAmount = lot.amount - minHold;
+    // ✅ Profitability Check: block sell if P/L would be zero or negative
+    const proceeds = info.price * sellableAmount;
+    const cost = lot.price * sellableAmount;
+    const profit = proceeds - cost;
+
+    if (profit <= 0) {
+      console.log(
+        `❌ SELL BLOCKED for ${symbol}: P/L would be ${profit.toFixed(2)}`
+      );
+      return;
+    }
     if (sellableAmount <= 0) {
       console.log(
         `❌ SELL BLOCKED for ${symbol}: cannot sell below minimum holding (${minHold})`
@@ -768,13 +779,9 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
 
-    // 🛡️ SELL GUARD: Block if price <= cost basis unless STOP-LOSS is active
-    if (info.price <= lot.price) {
-      if (
-        stopLossActive &&
-        info.price < lot.price &&
-        info.price <= stopLossPrice
-      ) {
+    // 🛡️ SELL GUARD: Block if price < cost basis unless STOP-LOSS is active
+    if (info.price < lot.price) {
+      if (stopLossActive && info.price <= stopLossPrice) {
         console.log(
           `⚠️ STOP-LOSS SELL for ${symbol}: sell price $${info.price.toFixed(
             config.priceDecimalPlaces
@@ -786,28 +793,7 @@ async function runStrategyForSymbol(symbol) {
         console.log(
           `❌ SELL BLOCKED for ${symbol}: sell price $${info.price.toFixed(
             config.priceDecimalPlaces
-          )} <= cost basis $${lot.price.toFixed(config.priceDecimalPlaces)}`
-        );
-        return;
-      }
-    }
-
-    // 🔥 CALCULATE ACTUAL PROFIT before committing to sell
-    const slippage = strat.slippage || 0;
-    const proceeds =
-      Math.round(info.price * sellableAmount * (1 - slippage) * 100) / 100;
-    const expectedProfit =
-      Math.round((proceeds - lot.price * sellableAmount) * 100) / 100;
-
-    // SELL GUARD: Block if expectedProfit <= 0 (zero or loss) unless STOP-LOSS
-    if (
-      !(stopLossActive && info.price < lot.price && info.price <= stopLossPrice)
-    ) {
-      if (expectedProfit <= 0) {
-        console.log(
-          `❌ SELL BLOCKED for ${symbol}: would yield non-positive profit ($${expectedProfit.toFixed(
-            2
-          )})`
+          )} < cost basis $${lot.price.toFixed(config.priceDecimalPlaces)}`
         );
         return;
       }
