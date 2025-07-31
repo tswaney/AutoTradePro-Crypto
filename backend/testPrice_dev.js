@@ -672,6 +672,23 @@ async function runStrategyForSymbol(symbol) {
         `💤 Strategy decision for ${symbol}: HOLD @ $${info.price.toFixed(8)}`
       );
     }
+
+    // --- 🔥 PATCH: TREND DEBUG LOGGING ---
+    if (process.env.DEBUG_BUYS === "true") {
+      console.log(
+        `[DEBUG][${symbol}] price=${info.price}, costBasis=${
+          holding.costBasis
+        }, trend=${strategyState.trend || "unknown"}, delta=${
+          typeof strategyState.delta === "number"
+            ? strategyState.delta.toFixed(6)
+            : "n/a"
+        }, atr=${
+          typeof strategyState.atr === "number"
+            ? strategyState.atr.toFixed(6)
+            : "n/a"
+        }`
+      );
+    }
   }
 
   // --- GUARD: Block trading if not enabled (during seeding) ---

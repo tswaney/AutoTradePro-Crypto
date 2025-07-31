@@ -4,7 +4,8 @@
 module.exports = {
   name: "Moderate Retain Mode",
   version: "v1.1",
-  description: "Grid strategy with moderate profit locking and cash reserve using config thresholds.",
+  description:
+    "Grid strategy with moderate profit locking and cash reserve using config thresholds.",
 
   /**
    * updateStrategyState: track recent price trend
@@ -35,7 +36,9 @@ module.exports = {
     const gridSize = strategyState.grid?.length || 0;
     // Log current trend and delta for debugging
     console.log(
-      `[STRATEGY] ${trend} trend, Δ ${(delta * 100).toFixed(4)}%, grid size: ${gridSize}`
+      `[STRATEGY] ${trend} trend, Δ ${(delta * 100).toFixed(
+        4
+      )}%, grid size: ${gridSize}`
     );
 
     // Initial buy if we have no cost basis yet
