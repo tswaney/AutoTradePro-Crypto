@@ -175,9 +175,13 @@ async function promptStrategySelection() {
     output: process.stdout,
   });
   return new Promise((resolve) => {
-    rl.question("\nSelect strategy [default 1]: ", (input) => {
+    const DEFAULT_STRATEGY_INDEX = 8; // 0-based index for #9
+    rl.question(`\nSelect strategy [default 9]: `, (input) => {
       const idx = parseInt(input.trim(), 10);
-      const strat = modules[idx > 0 && idx <= modules.length ? idx - 1 : 0];
+      const strat =
+        modules[
+          idx > 0 && idx <= modules.length ? idx - 1 : DEFAULT_STRATEGY_INDEX
+        ];
       rl.close();
       config.strategy = `${strat.name} (${strat.version})`;
       selectedStrategy = strat;
