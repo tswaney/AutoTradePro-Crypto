@@ -1,7 +1,7 @@
 {
   "BTCUSD": {
     "amount": 0.03782988,
-    "costBasis": 117175.00,
+    "costBasis": 113208.00,
     "grid": [
       {
         "price": 108803.46996936,
@@ -12,7 +12,7 @@
   },
   "BONKUSD": {
     "amount": 88281627.00,
-    "costBasis": 0.0000284,
+    "costBasis": 0.000025,
     "grid": [
       {
         "price": 0.00002175,
@@ -23,7 +23,7 @@
   },
   "ETHUSD": {
     "amount": 0.7195392675156308,
-    "costBasis": 3749.53,
+    "costBasis": 3597.53,
     "grid": [
       {
         "price": 2556.45702515,
@@ -34,7 +34,7 @@
   },
   "XLMUSD": {
     "amount": 3922.68,
-    "costBasis": 0.41051,
+    "costBasis": 0.400,
     "grid": [
       {
         "price": 0.28946748,
@@ -45,7 +45,7 @@
   },
   "POPCATUSD": {
     "amount": 2234.04,
-    "costBasis": 0.4925,
+    "costBasis": 0.298,
     "grid": [
       {
         "price": 0.49829675,
@@ -56,7 +56,7 @@
   },
   "PEPEUSD": {
     "amount": 81263652.00,
-    "costBasis": 0.00002342,
+    "costBasis": 0.00001020,
     "grid": [
       {
         "price": 0.00001395,
@@ -67,7 +67,7 @@
   },
   "XRPUSD": {
     "amount": 183.463075,
-    "costBasis": 3.1,
+    "costBasis": 2.99,
     "grid": [
       {
         "price": 2.349894275,
@@ -78,7 +78,7 @@
   },
   "TRUMPUSD": {
     "amount": 26.1449,
-    "costBasis": 9.38,
+    "costBasis": 8.71,
     "grid": [
       {
         "price": 12.944287365,
@@ -89,7 +89,7 @@
   },
   "ADAUSD": {
     "amount": 86.16,
-    "costBasis": 1.1142061,
+    "costBasis": 0.731,
     "grid": [
       {
         "price": 0.759577965,
@@ -100,7 +100,7 @@
   },
   "SOLUSD": {
     "amount": 0.26014,
-    "costBasis": 178.33,
+    "costBasis": 164.20,
     "grid": [
       {
         "price": 176.345007615,
@@ -111,7 +111,7 @@
   },
   "LTCUSD": {
     "amount": 0.40682263,
-    "costBasis": 139.67,
+    "costBasis": 122.67,
     "grid": [
       {
         "price": 97.0784235,
@@ -122,7 +122,7 @@
   },
   "DOGEUSD": {
     "amount": 87.69090496,
-    "costBasis": 0.397761,
+    "costBasis": 0.198,
     "grid": [
       {
         "price": 0.228029605,
@@ -133,7 +133,7 @@
   },
   "SHIBUSD": {
     "amount": 991179.42,
-    "costBasis": 0.00001434,
+    "costBasis": 0.00001198,
     "grid": [
       {
         "price": 0.00001443,
@@ -144,7 +144,7 @@
   },
   "LINKUSD": {
     "amount": 0.4387969694709001,
-    "costBasis": 17.31,
+    "costBasis": 16.41,
     "grid": [
       {
         "price": 15.713665835,
@@ -155,7 +155,7 @@
   },
   "AVAXUSD": {
     "amount": 0.047,
-    "costBasis": 24.0,
+    "costBasis": 21.90,
     "grid": [
       {
         "price": 23.137101,
@@ -166,7 +166,7 @@
   },
   "COMPUSD": {
     "amount": 0.0190439760174337,
-    "costBasis": 46.79,
+    "costBasis": 45.79,
     "grid": [
       {
         "price": 42.794056895,

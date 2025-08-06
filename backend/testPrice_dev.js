@@ -645,6 +645,7 @@ async function runStrategyForSymbol(symbol) {
     trendHistory: strat.trendHistory,
     grid: strat.grid,
     slippage: strat.slippage,
+    trend: strat.trend || "rangebound", // <---- THIS IS KEY
   };
 
   // --- STRATEGY DECISION ---

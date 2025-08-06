@@ -15,5 +15,33 @@ Press CTRL+S for Status, CTRL+G for Grid, CTRL+C to exit
  [7] Simple Buy Low/Sell High (1.1) - Buys when price dips below costBasis by baseBuyThreshold; sells when price rises above costBasis by baseSellThreshold; straightforward cost-basis gating.
  [8] Super Adaptive Strategy (1.0) - Hybrid regime/volatility/swing strategy for all market conditions (adaptive grid, momentum, reversal, profit lock).
  [9] Ultimate Safety Profit Strategy (1.0) - Adaptive regime, volatility scaling, profit lock, risk spread, and emergency brake.
+ [10] Ultimate Safety Profit Strategy (2.0) - Adaptive regime, volatility scaling, profit lock, risk spread, emergency brake, and auto-tune learning
 [1G[0J
-Select strategy [default 9]: [30G
+Select strategy [default 9]: [30G10
+🧪 TEST_MODE: skipping BP fetch
+
+Current Holdings:
+┌────┬───────────┬─────────────────┬─────────────────┬───────────────┐
+│ No │  Symbol   │    Quantity     │      Price      │   CostBasis   │
+├────┼───────────┼─────────────────┼─────────────────┼───────────────┤
+│ 1  │ BTCUSD    │ 0.037830        │ 115176.88488750 │ 113208.000000 │
+│ 2  │ BONKUSD   │ 88281627.000000 │ 0.00002447      │ 0.000025      │
+│ 3  │ ETHUSD    │ 0.719539        │ 3681.01319830   │ 3597.530000   │
+│ 4  │ XLMUSD    │ 3922.680000     │ 0.39938050      │ 0.400000      │
+│ 5  │ POPCATUSD │ 2234.040000     │ 0.30272474      │ 0.298000      │
+│ 6  │ PEPEUSD   │ 81263652.000000 │ 0.00001053      │ 0.000010      │
+│ 7  │ XRPUSD    │ 183.463075      │ 2.99681824      │ 2.990000      │
+│ 8  │ TRUMPUSD  │ 26.144900       │ 8.84624233      │ 8.710000      │
+│ 9  │ ADAUSD    │ 86.160000       │ 0.74200170      │ 0.731000      │
+│ 10 │ SOLUSD    │ 0.260140        │ 168.28129500    │ 164.200000    │
+│ 11 │ LTCUSD    │ 0.406823        │ 118.84000000    │ 122.670000    │
+│ 12 │ DOGEUSD   │ 87.690905       │ 0.20546065      │ 0.198000      │
+│ 13 │ SHIBUSD   │ 991179.420000   │ 0.00001236      │ 0.000012      │
+│ 14 │ LINKUSD   │ 0.438797        │ 16.72179665     │ 16.410000     │
+│ 15 │ AVAXUSD   │ 0.047000        │ 22.24500000     │ 21.900000     │
+│ 16 │ COMPUSD   │ 0.019044        │ 46.19965837     │ 45.790000     │
+└────┴───────────┴─────────────────┴─────────────────┴───────────────┘
+
+=== STARTUP SUMMARY ===
+Beginning Portfolio Value: $13391.96
+🔄 Seeding initial cycle (no trades)...

@@ -51,11 +51,12 @@ function getTradeDecision({
   portfolio,
   config,
 }) {
-  // === Safety Brake ===
-  if (portfolio.drawdownTriggered) return null;
+  strategyState.trend = "rangebound"; // Set default at the very top!
+  if (!portfolio || portfolio.drawdownTriggered) return null;
 
-  // === Regime/Volatility Detection ===
+  // Regime/Volatility Detection
   const regime = detectRegime(strategyState, config);
+  strategyState.trend = regime; // Always overwrite after detection
   const atrVal = atr(strategyState.priceHistory, config.SUPER_ATR_PERIOD || 14);
 
   // Set for debug and UI
