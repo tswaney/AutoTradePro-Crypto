@@ -3,16 +3,73 @@
 "use strict";
 
 // ==============================================
-// Redirect all stdout & stderr to a log file
+// Disables output buffering, making logs behave
+// exactly like a terminal
+// ==============================================
+if (
+  process.stdout &&
+  process.stdout._handle &&
+  process.stdout._handle.setBlocking
+) {
+  process.stdout._handle.setBlocking(true);
+}
+
+// ==============================================
+// Detect if running in Azure Container/App Service
 // ==============================================
 const fsLogger = require("fs");
 const pathLogger = require("path");
-const logFilePath = pathLogger.join(__dirname, "testPrice_output.txt");
-const logStream = fsLogger.createWriteStream(logFilePath, { flags: "w" });
-// Preventing trading until after seeding process is complete
-let tradingEnabled = false;
-let soldOutSymbols = new Set();
+require("dotenv").config(); // Load .env early
 
+// --- Azure detection logic ---
+let runningInAzure = false;
+try {
+  // Detect common Azure App Service/Container markers
+  if (
+    process.env.WEBSITE_INSTANCE_ID ||
+    process.env.AZURE_HTTP_USER_AGENT ||
+    __dirname.startsWith("/home/") // Most Azure Linux containers
+  ) {
+    runningInAzure = true;
+  }
+} catch (_) {}
+
+let LOG_DIR, LOG_FILE, HOLDINGS_FILE;
+// Always prefer env vars if present
+if (runningInAzure) {
+  LOG_DIR = process.env.LOG_DIR || "/usr/src/app/logs/";
+  LOG_FILE = process.env.LOG_FILE || "botlog.txt";
+  HOLDINGS_FILE =
+    process.env.HOLDINGS_FILE || "/usr/src/app/cryptoHoldings.json";
+} else {
+  LOG_DIR = process.env.LOG_DIR || "./";
+  LOG_FILE = process.env.LOG_FILE || "testPrice_output.txt";
+  HOLDINGS_FILE = process.env.HOLDINGS_FILE || "./cryptoHoldings.json";
+}
+
+// --- Diagnostics (shows paths in use and detected mode) ---
+console.log("DEBUG:", {
+  __dirname,
+  LOG_DIR,
+  LOG_FILE,
+  HOLDINGS_FILE,
+  runningInAzure,
+});
+
+// --- Ensure log directory exists ---
+if (!fsLogger.existsSync(LOG_DIR)) {
+  try {
+    fsLogger.mkdirSync(LOG_DIR, { recursive: true });
+  } catch (err) {
+    console.error(`Failed to create log directory '${LOG_DIR}':`, err.message);
+    process.exit(1);
+  }
+}
+
+const logFilePath = pathLogger.join(LOG_DIR, LOG_FILE);
+const logStream = fsLogger.createWriteStream(logFilePath, { flags: "w" });
+
+// Patch process.stdout & process.stderr to log file
 const origStdout = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, encoding, callback) => {
   logStream.write(chunk);
@@ -24,6 +81,10 @@ process.stderr.write = (chunk, encoding, callback) => {
   origStderr(chunk, encoding, callback);
 };
 
+// Preventing trading until after seeding process is complete
+let tradingEnabled = false;
+let soldOutSymbols = new Set();
+
 // ==============================================
 // Allow Ctrl+S / Ctrl+G key handling on UNIX terminals
 // ==============================================
@@ -33,11 +94,6 @@ if (process.stdin.isTTY) {
     execSync("stty -ixon", { stdio: "inherit" });
   } catch (_) {}
 }
-
-// ==============================================
-// Load environment variables from .env
-// ==============================================
-require("dotenv").config();
 
 const axios = require("axios");
 const fs = require("fs");
@@ -64,18 +120,15 @@ const MAX_TEST_BUYS = parseInt(process.env.MAX_TEST_BUYS, 10) || 2;
 const MAX_TEST_SELLS = parseInt(process.env.MAX_TEST_SELLS, 10) || 2;
 const LIMIT_TO_MAX_BUY_SELL = process.env.LIMIT_TO_MAX_BUY_SELL === "true";
 
-// New: Locked Cash percent, expects a whole number (e.g., 20 for 20%)
 const LOCKED_CASH_PERCENT = parseFloat(process.env.LOCKED_CASH_PERCENT) || 20;
 const LOCKED_CASH_FRAC = Math.max(0, Math.min(LOCKED_CASH_PERCENT / 100, 1));
 
-// New: Slippage, expects a whole number (e.g., 2 for 2%)
 const DEFAULT_SLIPPAGE_PCT = parseFloat(process.env.defaultSlippage) || 2.0;
 const DEFAULT_SLIPPAGE_FRAC = Math.max(
   0,
   Math.min(DEFAULT_SLIPPAGE_PCT / 100, 1)
 );
 
-// Tunable config (per-strategy)
 const config = {
   aiEnabled: process.env.AI_ENABLED === "true",
   demoMode: process.env.DEMO_MODE === "true",
@@ -194,9 +247,7 @@ async function promptStrategySelection() {
 // Load holdings from disk and seed each grid
 // ==============================================
 function loadHoldings() {
-  const data = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "cryptoHoldings.json"), "utf8")
-  );
+  const data = JSON.parse(fs.readFileSync(HOLDINGS_FILE, "utf8"));
   for (const sym in data) {
     const { amount, costBasis } = data[sym];
     if (amount > config.minTradeAmount) {
@@ -224,12 +275,10 @@ async function seedStrategyGrids() {
     Object.keys(portfolio.cryptos).map(async (sym) => {
       const strat = strategies[sym];
 
-      // Initialize state arrays if needed
       strat.priceHistory = strat.priceHistory || [];
       strat.trendHistory = strat.trendHistory || [];
       strat.grid = strat.grid || [];
 
-      // If we already have holdings for this symbol, seed the grid and costBasis
       const holding = portfolio.cryptos[sym];
       if (holding && holding.amount >= config.minTradeAmount) {
         if (strat.grid.length === 0) {
@@ -242,13 +291,11 @@ async function seedStrategyGrids() {
         holding.costBasis = holding.costBasis || strat.grid[0].price;
       }
 
-      // Seed the priceHistory (simulate past prices)
       let lastPrice = null;
       for (let i = seedHistoryLength; i > 0; i--) {
         const { price } = await getPrice(sym);
         strat.priceHistory.push(price);
         lastPrice = price;
-        // Optionally, seed trendHistory for confirmation-based strategies
         if (strat.priceHistory.length > 1) {
           const prev = strat.priceHistory[strat.priceHistory.length - 2];
           strat.trendHistory.push(
@@ -258,12 +305,10 @@ async function seedStrategyGrids() {
       }
       strat.lastPrice = lastPrice;
 
-      // Now run updateStrategyState so derived fields (ATR, etc.) are initialized
       if (typeof strat.module.updateStrategyState === "function") {
         strat.module.updateStrategyState(sym, strat, config);
       }
 
-      // Print seeding summary for debug
       console.log(
         `[SEED] ${sym} seeded with priceHistory=${
           strat.priceHistory.length
@@ -283,10 +328,7 @@ async function refreshDemoCostBasis() {
     const info = await getPrice(sym);
     if (info) portfolio.cryptos[sym].costBasis = info.price;
   }
-  fs.writeFileSync(
-    path.join(__dirname, "cryptoHoldings.json"),
-    JSON.stringify(portfolio.cryptos, null, 2)
-  );
+  fs.writeFileSync(HOLDINGS_FILE, JSON.stringify(portfolio.cryptos, null, 2));
 }
 
 // ==============================================
@@ -663,6 +705,7 @@ async function runStrategyForSymbol(symbol) {
       costBasis: holding.costBasis,
       strategyState,
       config,
+      strat, // <-- Pass persistent per-symbol state for all strategies (safe for old & new)
     });
     if (decision && decision.action) {
       action = decision.action.toUpperCase();
