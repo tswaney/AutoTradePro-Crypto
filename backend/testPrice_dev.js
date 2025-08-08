@@ -22,68 +22,52 @@ if (
 // ==============================================
 // Detect if running in Azure Container/App Service
 // ==============================================
+// ==============================================
+// Per-bot data directories (isolation)
+// ==============================================
 const fsLogger = require("fs");
 const pathLogger = require("path");
 require("dotenv").config(); // Load .env early
 
-// --- Azure detection logic ---
-let runningInAzure = false;
-try {
-  // Detect common Azure App Service/Container markers
-  if (
-    process.env.WEBSITE_INSTANCE_ID ||
-    process.env.AZURE_HTTP_USER_AGENT ||
-    __dirname.startsWith("/home/") // Most Azure Linux containers
-  ) {
-    runningInAzure = true;
-  }
-} catch (_) {}
+// Each container/bot should set a unique BOT_ID, optionally a DATA_DIR
+const BOT_ID = process.env.BOT_ID || "default";
+const DATA_DIR =
+  process.env.DATA_DIR || pathLogger.join(__dirname, "data", BOT_ID);
 
-let LOG_DIR, LOG_FILE, HOLDINGS_FILE;
-// Always prefer env vars if present
-if (runningInAzure) {
-  LOG_DIR = process.env.LOG_DIR || "/usr/src/app/logs/";
-  LOG_FILE = process.env.LOG_FILE || "botlog.txt";
-  HOLDINGS_FILE =
-    process.env.HOLDINGS_FILE || "/usr/src/app/cryptoHoldings.json";
-} else {
-  LOG_DIR = process.env.LOG_DIR || "./";
-  LOG_FILE = process.env.LOG_FILE || "testPrice_output.txt";
-  HOLDINGS_FILE = process.env.HOLDINGS_FILE || "./cryptoHoldings.json";
+// Ensure DATA_DIR exists
+try {
+  fsLogger.mkdirSync(DATA_DIR, { recursive: true });
+} catch (err) {
+  console.error(`Failed to create DATA_DIR '${DATA_DIR}':`, err.message);
+  process.exit(1);
 }
 
-// --- Diagnostics (shows paths in use and detected mode) ---
+// File locations (overridable via env)
+const HOLDINGS_FILE =
+  process.env.HOLDINGS_FILE || pathLogger.join(DATA_DIR, "cryptoHoldings.json");
+const LOG_FILE = process.env.LOG_FILE || "testPrice_output.txt";
+const LOG_PATH = process.env.LOG_PATH || pathLogger.join(DATA_DIR, LOG_FILE);
+
+// Diagnostics
 console.log("DEBUG:", {
   __dirname,
-  LOG_DIR,
-  LOG_FILE,
+  BOT_ID,
+  DATA_DIR,
   HOLDINGS_FILE,
-  runningInAzure,
+  LOG_PATH,
 });
 
-// --- Ensure log directory exists ---
-if (!fsLogger.existsSync(LOG_DIR)) {
-  try {
-    fsLogger.mkdirSync(LOG_DIR, { recursive: true });
-  } catch (err) {
-    console.error(`Failed to create log directory '${LOG_DIR}':`, err.message);
-    process.exit(1);
-  }
-}
-
-const logFilePath = pathLogger.join(LOG_DIR, LOG_FILE);
-const logStream = fsLogger.createWriteStream(logFilePath, { flags: "w" });
-
-// Patch process.stdout & process.stderr to log file
+// Create log stream and tee stdout/stderr
+const logStream = fsLogger.createWriteStream(LOG_PATH, { flags: "w" });
 const origStdout = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, encoding, callback) => {
   logStream.write(chunk);
-  origStdout(chunk, encoding, callback);
+  return origStdout(chunk, encoding, callback);
 };
 const origStderr = process.stderr.write.bind(process.stderr);
 process.stderr.write = (chunk, encoding, callback) => {
   logStream.write(chunk);
-  origStderr(chunk, encoding, callback);
+  return origStderr(chunk, encoding, callback);
 };
 
 // Preventing trading until after seeding process is complete
