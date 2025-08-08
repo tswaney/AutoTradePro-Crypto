@@ -3,6 +3,11 @@
 "use strict";
 
 // ==============================================
+// Helper: normalize boolean env vars (true/1/yes/on)
+// ==============================================
+const asBool = (v) => /^(1|true|yes|on)$/i.test(String(v || "").trim());
+
+// ==============================================
 // Disables output buffering, making logs behave
 // exactly like a terminal
 // ==============================================
@@ -112,13 +117,12 @@ const SIMPLE_BUY_THRESHOLD =
   parseFloat(process.env.SIMPLE_BUY_THRESHOLD) || 2.0;
 const SIMPLE_SELL_THRESHOLD =
   parseFloat(process.env.SIMPLE_SELL_THRESHOLD) || 3.0;
-const ENABLE_PEAK_CONFIRMATION =
-  process.env.ENABLE_PEAK_CONFIRMATION === "true";
+const ENABLE_PEAK_CONFIRMATION = asBool(process.env.ENABLE_PEAK_CONFIRMATION);
 
-const TEST_MODE = process.env.TEST_MODE === "true";
+const TEST_MODE = asBool(process.env.TEST_MODE);
 const MAX_TEST_BUYS = parseInt(process.env.MAX_TEST_BUYS, 10) || 2;
 const MAX_TEST_SELLS = parseInt(process.env.MAX_TEST_SELLS, 10) || 2;
-const LIMIT_TO_MAX_BUY_SELL = process.env.LIMIT_TO_MAX_BUY_SELL === "true";
+const LIMIT_TO_MAX_BUY_SELL = asBool(process.env.LIMIT_TO_MAX_BUY_SELL);
 
 const LOCKED_CASH_PERCENT = parseFloat(process.env.LOCKED_CASH_PERCENT) || 20;
 const LOCKED_CASH_FRAC = Math.max(0, Math.min(LOCKED_CASH_PERCENT / 100, 1));
@@ -130,8 +134,8 @@ const DEFAULT_SLIPPAGE_FRAC = Math.max(
 );
 
 const config = {
-  aiEnabled: process.env.AI_ENABLED === "true",
-  demoMode: process.env.DEMO_MODE === "true",
+  aiEnabled: asBool(process.env.AI_ENABLED),
+  demoMode: asBool(process.env.DEMO_MODE),
   testMode: TEST_MODE,
   limitBuysSells: LIMIT_TO_MAX_BUY_SELL,
   initialBalance: parseFloat(process.env.INITIAL_BALANCE) || 1000,
@@ -722,7 +726,7 @@ async function runStrategyForSymbol(symbol) {
     }
 
     // --- 🔥 PATCH: TREND DEBUG LOGGING ---
-    if (process.env.DEBUG_BUYS === "true") {
+    if (asBool(process.env.DEBUG_BUYS)) {
       console.log(
         `[DEBUG][${symbol}] price=${info.price}, costBasis=${
           holding.costBasis
@@ -821,7 +825,7 @@ async function runStrategyForSymbol(symbol) {
     }
 
     // STOP-LOSS and min hold logic...
-    const stopLossActive = process.env.STOP_LOSS_MODE === "true";
+    const stopLossActive = asBool(process.env.STOP_LOSS_MODE);
     const stopLossPct = parseFloat(process.env.STOP_LOSS_THRESHOLD_PCT) || 10;
     const stopLossPrice = lot.price * (1 - stopLossPct / 100);
     const minHold = parseFloat(process.env.MIN_HOLD_AMOUNT) || 0.01;
