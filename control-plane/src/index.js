@@ -6,7 +6,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { requireAuth, requireRole } from './auth.js';
-import { listBots, getBot, startBot, stopBot, restartBot, patchBot } from './bots.js';
+import { listBots, getBot, patchBot } from './bots.js';
+import * as local from './localRunner.js';
 
 const app = express();
 expressWs(app);
@@ -19,31 +20,53 @@ app.get('/health', (_,res)=>res.send('ok'));
 // === Authenticated API ===
 app.use(requireAuth);
 
-app.get('/bots', (req,res)=> res.json(listBots()));
-app.get('/bots/:id', (req,res)=> {
-  const b = getBot(req.params.id); if (!b) return res.status(404).send('Not found');
-  return res.json(b);
-});
-app.post('/bots/:id/start', requireRole('bots.write'), (req,res)=> {
-  return startBot(req.params.id) ? res.json({ok:true}) : res.status(404).send('Not found');
-});
-app.post('/bots/:id/stop', requireRole('bots.write'), (req,res)=> {
-  return stopBot(req.params.id) ? res.json({ok:true}) : res.status(404).send('Not found');
-});
-app.post('/bots/:id/restart', requireRole('bots.write'), (req,res)=> {
-  return restartBot(req.params.id) ? res.json({ok:true}) : res.status(404).send('Not found');
-});
-app.patch('/bots/:id', requireRole('bots.write'), (req,res)=> {
-  const b = patchBot(req.params.id, req.body || {});
-  return b ? res.json(b) : res.status(404).send('Not found');
+// List bots, overriding status with real local process state
+app.get('/bots', (req,res)=> {
+  const bots = listBots().map(b => ({ ...b, status: local.isRunning(b.botId) ? 'running' : 'stopped' }));
+  res.json(bots);
 });
 
-// === WebSocket: logs (placeholder) ===
+app.get('/bots/:id', (req,res)=> {
+  const b = getBot(req.params.id);
+  if (!b) return res.status(404).send('Not found');
+  return res.json({ ...b, status: local.isRunning(b.botId) ? 'running' : 'stopped' });
+});
+
+app.post('/bots/:id/start', requireRole('bots.write'), (req,res)=> {
+  const b = getBot(req.params.id); if (!b) return res.status(404).send('Not found');
+  const r = local.start(b.botId);
+  if (!r.ok) return res.status(409).json(r);
+  return res.json(r);
+});
+
+app.post('/bots/:id/stop', requireRole('bots.write'), async (req,res)=> {
+  const b = getBot(req.params.id); if (!b) return res.status(404).send('Not found');
+  const r = await local.stop(b.botId);
+  if (!r.ok) return res.status(409).json(r);
+  return res.json(r);
+});
+
+app.post('/bots/:id/restart', requireRole('bots.write'), async (req,res)=> {
+  const b = getBot(req.params.id); if (!b) return res.status(404).send('Not found');
+  const r = await local.restart(b.botId);
+  if (!r.ok) return res.status(409).json(r);
+  return res.json(r);
+});
+
+// === WebSocket: live logs from local DATA_DIR/testPrice_output.txt ===
 app.ws('/bots/:id/logs/stream', (ws, req) => {
-  const bot = getBot(req.params.id);
-  if (!bot) { ws.close(); return; }
-  // In real system, tail file in bot.dataDir/testPrice_output.txt and send appended lines.
-  ws.send(JSON.stringify({ ts: Date.now(), level:'info', msg:`Connected to ${bot.botId}`, botId: bot.botId }));
+  const id = req.params.id;
+  const b = getBot(id);
+  if (!b) { ws.close(); return; }
+
+  ws.send(JSON.stringify({ ts: Date.now(), level:'info', msg:`Connected to ${id}`, botId: id }));
+
+  const stop = local.streamLogs(id, (line) => {
+    try { ws.send(JSON.stringify({ ts: Date.now(), level:'info', msg: line, botId: id })); } catch {}
+  });
+
+  ws.on('close', () => { stop(); });
+  ws.on('error', () => { stop(); });
 });
 
 const port = process.env.PORT || 4000;

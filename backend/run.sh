@@ -1,69 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# === Docker launcher for AutoTradePro Crypto ===
-# Usage:
-#   ./run.sh                # runs default entry (testPrice_Dev.js)
-#   ./run.sh myEntry.js     # runs specified entry file
-#   DEBUG_BUYS=1 TEST_MODE=1 ./run.sh
-#   PULL_IMAGE=1 ./run.sh   # pulls the image before running
-#
-# Env vars respected (all optional):
-#   IMAGE=node:20-alpine
-#   DEBUG_BUYS=true|1|yes|on
-#   TEST_MODE=true|1|yes|on
-#   DEMO_MODE=false|0|no|off
-#   LIMIT_TO_MAX_BUY_SELL=true|1|yes|on
+# Always run from the backend folder (where this script lives)
+cd "$(dirname "$0")"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# --- Env & defaults ---
+BOT_ID="${BOT_ID:-default}"
+DATA_DIR_HOST="${DATA_DIR:-$PWD/data/$BOT_ID}"
+DATA_DIR_CONTAINER="/usr/src/app/data/$BOT_ID"
 
-APP_DEFAULT="testPrice_Dev.js"
-APP="${1:-$APP_DEFAULT}"
-IMAGE="${IMAGE:-node:20-alpine}"
+mkdir -p "$DATA_DIR_HOST"
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  sed -n '2,35p' "$0"
-  exit 0
+# Only request a TTY when we actually have one (fixes: "the input device is not a TTY")
+TTY_ARGS=""
+if [ -t 0 ] && [ -t 1 ]; then
+  TTY_ARGS="-it"
 fi
 
-if [[ ! -f "$APP" ]]; then
-  echo "❌ Cannot find '$APP' in $(pwd)."
-  echo "   Pass a filename: ./run.sh myFile.js"
-  exit 1
-fi
+echo "[${BOT_ID}] 🐳 Running testPrice_Dev.js in Docker image node:20-alpine"
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "❌ Docker not found. Install Docker Desktop and try again."
-  exit 1
-fi
-
-# Optional: pull the image if requested
-if [[ "${PULL_IMAGE:-}" == "1" ]]; then
-  echo "⬇️  Pulling Docker image: $IMAGE"
-  docker pull "$IMAGE"
-fi
-
-# Defaults; your code now tolerates 1/true/yes/on via asBool()
-DEBUG_BUYS="${DEBUG_BUYS:-true}"
-TEST_MODE="${TEST_MODE:-true}"
-DEMO_MODE="${DEMO_MODE:-false}"
-LIMIT_TO_MAX_BUY_SELL="${LIMIT_TO_MAX_BUY_SELL:-true}"
-
-DOCKER_ARGS=(
-  --rm -it
-  -v "$PWD:/usr/src/app"
-  -w /usr/src/app
-  -e DEBUG_BUYS="$DEBUG_BUYS"
-  -e TEST_MODE="$TEST_MODE"
-  -e DEMO_MODE="$DEMO_MODE"
-  -e LIMIT_TO_MAX_BUY_SELL="$LIMIT_TO_MAX_BUY_SELL"
-)
-
-# Include .env if present
-if [[ -f .env ]]; then
-  DOCKER_ARGS+=( --env-file .env )
-fi
-
-echo "🐳 Running $APP in Docker image $IMAGE"
-docker run "${DOCKER_ARGS[@]}" "$IMAGE" sh -lc "node -v; node \"$APP\""
+docker run --rm $TTY_ARGS   --env-file .env   -e BOT_ID="$BOT_ID"   -e DATA_DIR="$DATA_DIR_CONTAINER"   -e DEBUG_BUYS="${DEBUG_BUYS:-true}"   -e TEST_MODE="${TEST_MODE:-true}"   -e DEMO_MODE="${DEMO_MODE:-false}"   -e LIMIT_TO_MAX_BUY_SELL="${LIMIT_TO_MAX_BUY_SELL:-true}"   -v "$PWD:/usr/src/app"   -w /usr/src/app   node:20-alpine node testPrice_Dev.js
