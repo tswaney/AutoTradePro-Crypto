@@ -6,8 +6,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { requireAuth, requireRole } from './auth.js';
-import { listBots, getBot, patchBot } from './bots.js';
+import { listBots, getBot } from './bots.js';
 import * as local from './localRunner.js';
+import { getStrategies } from './strategies.js';
 
 const app = express();
 expressWs(app);
@@ -19,6 +20,11 @@ app.get('/health', (_,res)=>res.send('ok'));
 
 // === Authenticated API ===
 app.use(requireAuth);
+
+// Strategies list (for the mobile UI)
+app.get('/strategies', (req, res) => {
+  res.json(getStrategies());
+});
 
 // List bots, overriding status with real local process state
 app.get('/bots', (req,res)=> {
@@ -34,7 +40,8 @@ app.get('/bots/:id', (req,res)=> {
 
 app.post('/bots/:id/start', requireRole('bots.write'), (req,res)=> {
   const b = getBot(req.params.id); if (!b) return res.status(404).send('Not found');
-  const r = local.start(b.botId);
+  const strategyChoice = Number(req.body?.strategyChoice || NaN);
+  const r = local.start(b.botId, { strategyChoice: Number.isFinite(strategyChoice) ? strategyChoice : undefined });
   if (!r.ok) return res.status(409).json(r);
   return res.json(r);
 });
@@ -48,7 +55,8 @@ app.post('/bots/:id/stop', requireRole('bots.write'), async (req,res)=> {
 
 app.post('/bots/:id/restart', requireRole('bots.write'), async (req,res)=> {
   const b = getBot(req.params.id); if (!b) return res.status(404).send('Not found');
-  const r = await local.restart(b.botId);
+  const strategyChoice = Number(req.body?.strategyChoice || NaN);
+  const r = await local.restart(b.botId, { strategyChoice: Number.isFinite(strategyChoice) ? strategyChoice : undefined });
   if (!r.ok) return res.status(409).json(r);
   return res.json(r);
 });

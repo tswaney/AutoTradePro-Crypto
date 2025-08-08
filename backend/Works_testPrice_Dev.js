@@ -20,6 +20,9 @@ if (
 }
 
 // ==============================================
+// Detect if running in Azure Container/App Service
+// ==============================================
+// ==============================================
 // Per-bot data directories (isolation)
 // ==============================================
 const fsLogger = require("fs");
@@ -171,10 +174,6 @@ let strategies = {};
 let selectedStrategy = null;
 let firstCycleDone = false;
 
-// === Graceful shutdown controls ===
-let shuttingDown = false;
-let cycleInFlight = null;
-
 // ==============================================
 // Helper: initialize per-symbol strategy state
 // ==============================================
@@ -196,7 +195,7 @@ function initializeStrategy(symbol) {
 }
 
 // ==============================================
-// Prompt user to pick a strategy (supports env/CI)
+// Prompt user to pick a strategy
 // ==============================================
 async function promptStrategySelection() {
   const files = fs
@@ -212,35 +211,14 @@ async function promptStrategySelection() {
     console.log(` [${i + 1}] ${s.name} (${s.version}) - ${s.description}`)
   );
 
-  // Auto-select when STRATEGY_CHOICE is set (1..N) OR stdin isn't a TTY
-  const DEFAULT_STRATEGY_INDEX = 8; // 0-based index for #9
-  const envChoice = parseInt(process.env.STRATEGY_CHOICE || "", 10);
-  const hasValidEnvChoice =
-    Number.isInteger(envChoice) &&
-    envChoice >= 1 &&
-    envChoice <= modules.length;
-
-  if (!process.stdin.isTTY || hasValidEnvChoice) {
-    const index = hasValidEnvChoice ? envChoice - 1 : DEFAULT_STRATEGY_INDEX;
-    const strat = modules[index] || modules[DEFAULT_STRATEGY_INDEX];
-    config.strategy = `${strat.name} (${strat.version})`;
-    selectedStrategy = strat;
-    console.log(
-      `\nAuto-selected strategy: ${config.strategy} ${
-        hasValidEnvChoice ? "(from STRATEGY_CHOICE)" : "(default)"
-      }`
-    );
-    return;
-  }
-
-  // Interactive prompt fallback
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
-  await new Promise((resolve) => {
+  return new Promise((resolve) => {
+    const DEFAULT_STRATEGY_INDEX = 8; // 0-based index for #9
     rl.question(`\nSelect strategy [default 9]: `, (input) => {
-      const idx = parseInt((input || "").trim(), 10);
+      const idx = parseInt(input.trim(), 10);
       const strat =
         modules[
           idx > 0 && idx <= modules.length ? idx - 1 : DEFAULT_STRATEGY_INDEX
@@ -537,20 +515,52 @@ async function getPrice(symbol) {
 }
 
 // ==============================================
-// Actual Sell execution logic (BUY handled inline)
+// Actual Buy/Sell execution logic
 // ==============================================
 function executeTrade(symbol, action, price, sellAmount = null) {
   const strat = strategies[symbol];
   const holding = portfolio.cryptos[symbol];
-  const PROFIT_LOCK_FRAC = parseFloat(process.env.PROFIT_LOCK_PARTIAL) || 0.0;
+  const LOCKED_CASH_FRAC = parseFloat(process.env.PROFIT_LOCK_PARTIAL) || 0.0;
   const minHold = parseFloat(process.env.MIN_HOLD_AMOUNT) || 0.01;
 
-  // Only SELL is supported here; BUYs are executed inline in runStrategyForSymbol
-  if (action === "SELL") {
+  // PATCH: Always use the minTradeAmount from config for empty detection
+  const minTradeAmount = config.minTradeAmount || minHold;
+
+  if (action === "BUY") {
+    // === Core Buy Logic ===
+    // You should set 'actualQty' appropriately in your buy code
+    strat.grid.push({ price, amount: actualQty, time: Date.now() });
+    holding.amount = (holding.amount || 0) + actualQty;
+    portfolio.buysToday++;
+
+    // === Formatted Output ===
+    console.log(
+      `🟢 BUY executed: ${actualQty.toFixed(6)} ${symbol} @ $${price.toFixed(
+        config.priceDecimalPlaces
+      )}`
+    );
+
+    // Print grid state after BUY, with numbered entries and human-readable times.
+    console.log(`\nAfter BUY ${symbol} grid:`);
+    if (strat.grid.length === 0) {
+      console.log("  (empty)");
+    } else {
+      strat.grid.forEach((lot, i) =>
+        console.log(
+          `  [${i + 1}] price=${lot.price.toFixed(
+            config.priceDecimalPlaces
+          )}, amount=${lot.amount.toFixed(6)}, time=${new Date(
+            lot.time
+          ).toLocaleString()}`
+        )
+      );
+    }
+  } else if (action === "SELL") {
+    // PATCH: Only partially sell the lot if it would drop below minHold
     let lot = strat.grid[0];
     if (!lot) return;
 
-    // Determine the sell quantity
+    // PATCH: Determine the sell quantity
     let qtyToSell;
     if (
       sellAmount !== null &&
@@ -559,15 +569,25 @@ function executeTrade(symbol, action, price, sellAmount = null) {
     ) {
       qtyToSell = sellAmount;
       lot.amount -= qtyToSell;
-      if (lot.amount < minHold) lot.amount = minHold;
+      // If lot remains above minHold, do not shift it from the grid
+      if (lot.amount < minHold) lot.amount = minHold; // Patch: extra safety
     } else if (lot.amount > minHold) {
       qtyToSell = lot.amount - minHold;
-      lot.amount = minHold;
+      lot.amount = minHold; // Reduce to anchor
     } else {
+      // Not enough to sell (would go below min hold)
       console.log(
         `❌ SELL BLOCKED for ${symbol}: cannot sell below minimum holding (${minHold})`
       );
       return;
+    }
+
+    // PATCH: If after sell lot is exactly minHold, do NOT shift it (keep in grid)
+    if (lot.amount > minHold * 0.999) {
+      // Remain in grid as anchor lot
+    } else {
+      // Defensive fallback: should not happen, but just in case, keep as anchor
+      lot.amount = minHold;
     }
 
     const proceeds =
@@ -577,14 +597,15 @@ function executeTrade(symbol, action, price, sellAmount = null) {
     const profit = Math.round((proceeds - lot.price * qtyToSell) * 100) / 100;
     let lockedAmount = 0;
     if (profit > 0) {
-      lockedAmount = Math.round(profit * PROFIT_LOCK_FRAC * 100) / 100;
+      lockedAmount = Math.round(profit * LOCKED_CASH_FRAC * 100) / 100;
       portfolio.lockedCash =
         Math.round((portfolio.lockedCash + lockedAmount) * 100) / 100;
     }
     holding.amount -= qtyToSell;
 
-    if (holding.amount < config.minTradeAmount) {
-      soldOutSymbols.add(symbol);
+    // PATCH: Never remove the anchor grid lot, even if holding drops to minHold
+    if (holding.amount < minTradeAmount) {
+      soldOutSymbols.add(symbol); // If you use this elsewhere, still flag
     }
 
     holding.costBasis = strat.grid.length
@@ -594,6 +615,7 @@ function executeTrade(symbol, action, price, sellAmount = null) {
       Math.round((portfolio.dailyProfitTotal + profit) * 100) / 100;
     portfolio.sellsToday++;
 
+    // --- FORMATTED OUTPUT ---
     console.log(
       `🔴 SELL executed: ${qtyToSell.toFixed(6)} ${symbol} @ $${price.toFixed(
         config.priceDecimalPlaces
@@ -653,7 +675,7 @@ async function runStrategyForSymbol(symbol) {
     trendHistory: strat.trendHistory,
     grid: strat.grid,
     slippage: strat.slippage,
-    trend: strat.trend || "rangebound",
+    trend: strat.trend || "rangebound", // <---- THIS IS KEY
   };
 
   // --- STRATEGY DECISION ---
@@ -671,7 +693,7 @@ async function runStrategyForSymbol(symbol) {
       costBasis: holding.costBasis,
       strategyState,
       config,
-      strat,
+      strat, // <-- Pass persistent per-symbol state for all strategies (safe for old & new)
     });
     if (decision && decision.action) {
       action = decision.action.toUpperCase();
@@ -681,11 +703,13 @@ async function runStrategyForSymbol(symbol) {
         )}`
       );
     } else {
+      // Even if no buy/sell, always log a HOLD decision for traceability
       console.log(
         `💤 Strategy decision for ${symbol}: HOLD @ $${info.price.toFixed(8)}`
       );
     }
 
+    // --- 🔥 PATCH: TREND DEBUG LOGGING ---
     if (asBool(process.env.DEBUG_BUYS)) {
       console.log(
         `[DEBUG][${symbol}] price=${info.price}, costBasis=${
@@ -705,6 +729,7 @@ async function runStrategyForSymbol(symbol) {
 
   // --- GUARD: Block trading if not enabled (during seeding) ---
   if (typeof tradingEnabled !== "undefined" && !tradingEnabled) {
+    // Optionally: log that trade is skipped during seeding (always prints HOLD if null)
     if (action) {
       console.log(`💤 Trade skipped for ${symbol} during seeding: ${action}`);
     }
@@ -713,6 +738,8 @@ async function runStrategyForSymbol(symbol) {
 
   // --- BUY HANDLING ---
   if (action === "BUY") {
+    // === Calculate spend for this buy ===
+    // Use a small portion of cash per buy, but always ensure at least the minimum trade size.
     const spend = Math.max(
       portfolio.cashReserve * 0.1,
       config.minTradeAmount * info.price
@@ -733,6 +760,8 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
 
+    // === Execute Buy: always allow new grid lot, even if anchor/minHold exists ===
+    // This enables DCA/grid buys at any price dip signal, regardless of prior grid state.
     holding.amount += actualQty;
     portfolio.cashReserve =
       Math.round((portfolio.cashReserve - spend) * 100) / 100;
@@ -741,14 +770,17 @@ async function runStrategyForSymbol(symbol) {
     strat.grid.push({ price: info.price, amount: actualQty, time: Date.now() });
     portfolio.buysToday++;
 
+    // === Formatted Output ===
     console.log(
       `🟢 BUY executed: ${actualQty.toFixed(
         6
       )} ${symbol} @ $${info.price.toFixed(config.priceDecimalPlaces)}`
     );
 
+    // Print grid state after BUY, with numbered entries and human-readable times.
     console.log(`\nAfter BUY ${symbol} grid:`);
     if (strat.grid.length === 0) {
+      // If grid is empty, indicate so for clarity (should not happen in this logic)
       console.log("  (empty)");
     } else {
       strat.grid.forEach((lot, idx) =>
@@ -764,7 +796,7 @@ async function runStrategyForSymbol(symbol) {
     return;
   }
 
-  // --- SELL HANDLING (with STOP-LOSS and MINIMUM HOLD GUARDS) ---
+  // --- SELL HANDLING (with STOP-LOSS and MINIMUM HOLD PATCH) ---
   if (action === "SELL") {
     strat.grid = strat.grid || [];
     const lot = strat.grid[0];
@@ -776,6 +808,7 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
 
+    // STOP-LOSS and min hold logic...
     const stopLossActive = asBool(process.env.STOP_LOSS_MODE);
     const stopLossPct = parseFloat(process.env.STOP_LOSS_THRESHOLD_PCT) || 10;
     const stopLossPrice = lot.price * (1 - stopLossPct / 100);
@@ -788,8 +821,13 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
 
+    // 🛡️ SELL GUARD: Block if price <= cost basis unless STOP-LOSS is active
     if (info.price <= lot.price) {
-      if (stopLossActive && info.price < lot.price && info.price <= stopLossPrice) {
+      if (
+        stopLossActive &&
+        info.price < lot.price &&
+        info.price <= stopLossPrice
+      ) {
         console.log(
           `⚠️ STOP-LOSS SELL for ${symbol}: sell price $${info.price.toFixed(
             config.priceDecimalPlaces
@@ -807,13 +845,17 @@ async function runStrategyForSymbol(symbol) {
       }
     }
 
+    // 🔥 CALCULATE ACTUAL PROFIT before committing to sell
     const slippage = strat.slippage || 0;
     const proceeds =
       Math.round(info.price * sellableAmount * (1 - slippage) * 100) / 100;
     const expectedProfit =
       Math.round((proceeds - lot.price * sellableAmount) * 100) / 100;
 
-    if (!(stopLossActive && info.price < lot.price && info.price <= stopLossPrice)) {
+    // SELL GUARD: Block if expectedProfit <= 0 (zero or loss) unless STOP-LOSS
+    if (
+      !(stopLossActive && info.price < lot.price && info.price <= stopLossPrice)
+    ) {
       if (expectedProfit <= 0) {
         console.log(
           `❌ SELL BLOCKED for ${symbol}: would yield non-positive profit ($${expectedProfit.toFixed(
@@ -824,9 +866,15 @@ async function runStrategyForSymbol(symbol) {
       }
     }
 
-    executeTrade(symbol, "SELL", info.price, sellableAmount);
-    lot.amount = Math.max(minHold, lot.amount - sellableAmount);
+    // ✅ Now safe to sell
+    executeTrade(symbol, "SELL", info.price, sellableAmount, lot); // 🔥 pass `lot`
+    // Reduce lot in grid (DO NOT REMOVE LOT, only update amount)
+    lot.amount -= sellableAmount;
+    if (lot.amount < minHold) {
+      lot.amount = minHold;
+    }
 
+    // --- FORMATTED GRID OUTPUT ---
     console.log(`\nAfter SELL ${symbol} grid:`);
     if (strat.grid.length === 0) {
       console.log("  (empty)");
@@ -844,7 +892,7 @@ async function runStrategyForSymbol(symbol) {
     return;
   }
 
-  // No trade
+  // No trade, already logged as HOLD above
   return;
 }
 
@@ -935,7 +983,7 @@ async function printFinalSummary() {
     strategies[sym] = initializeStrategy(sym);
     strategies[sym].module = selectedStrategy;
   });
-  await seedStrategyGrids();
+  seedStrategyGrids();
   if (config.demoMode) await refreshDemoCostBasis();
 
   // Initial price fetch, table, key bindings
@@ -981,13 +1029,12 @@ async function printFinalSummary() {
   firstCycleDone = true;
   console.log("✅ Initial cycle complete — trading now enabled.");
 
-  async function runCycle() {
-    if (shuttingDown) return;
+  const interval = setInterval(async () => {
     for (const sym of Object.keys(portfolio.cryptos)) {
-      if (shuttingDown) return;
       await runStrategyForSymbol(sym);
     }
-    if (shuttingDown) return;
+
+    // Profit Lock Check: Run once per tick after all symbols
     if (
       typeof selectedStrategy.shouldLockProfit === "function" &&
       typeof selectedStrategy.lockProfit === "function"
@@ -996,47 +1043,11 @@ async function printFinalSummary() {
         selectedStrategy.lockProfit(portfolio, config);
       }
     }
-  }
-
-  async function tickOnce() {
-    if (cycleInFlight) return; // prevent overlapping cycles
-    cycleInFlight = runCycle()
-      .catch((err) =>
-        console.error("Cycle error:", (err && err.message) || err)
-      )
-      .finally(() => {
-        cycleInFlight = null;
-      });
-    await cycleInFlight;
-  }
-
-  const interval = setInterval(() => {
-    tickOnce();
   }, config.checkInterval);
 
-  process.once("SIGINT", async () => {
-    shuttingDown = true;
+  process.on("SIGINT", async () => {
     clearInterval(interval);
-
-    try {
-      if (cycleInFlight) {
-        await Promise.race([
-          cycleInFlight,
-          new Promise((res) => setTimeout(res, 3000)),
-        ]);
-      }
-    } catch (_) {}
-
-    try {
-      await printFinalSummary();
-    } catch (e) {
-      console.error(e);
-    }
-    try {
-      if (typeof logStream !== "undefined" && logStream && logStream.end)
-        logStream.end();
-    } catch (_) {}
-
+    await printFinalSummary();
     process.exit(0);
   });
 })();

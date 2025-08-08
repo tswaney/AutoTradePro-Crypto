@@ -19,4 +19,4 @@ fi
 
 echo "[${BOT_ID}] 🐳 Running testPrice_Dev.js in Docker image node:20-alpine"
 
-docker run --rm $TTY_ARGS   --env-file .env   -e BOT_ID="$BOT_ID"   -e DATA_DIR="$DATA_DIR_CONTAINER"   -e DEBUG_BUYS="${DEBUG_BUYS:-true}"   -e TEST_MODE="${TEST_MODE:-true}"   -e DEMO_MODE="${DEMO_MODE:-false}"   -e LIMIT_TO_MAX_BUY_SELL="${LIMIT_TO_MAX_BUY_SELL:-true}"   -v "$PWD:/usr/src/app"   -w /usr/src/app   node:20-alpine node testPrice_Dev.js
+docker run --rm $TTY_ARGS   --env-file .env   -e BOT_ID="$BOT_ID"   -e DATA_DIR="$DATA_DIR_CONTAINER"   -e DEBUG_BUYS="${DEBUG_BUYS:-true}"   -e TEST_MODE="${TEST_MODE:-true}"   -e DEMO_MODE="${DEMO_MODE:-false}"   -e LIMIT_TO_MAX_BUY_SELL="${LIMIT_TO_MAX_BUY_SELL:-true}"  -e STRATEGY_CHOICE="${STRATEGY_CHOICE:-}" -v "$PWD:/usr/src/app"   -w /usr/src/app   node:20-alpine node testPrice_Dev.js

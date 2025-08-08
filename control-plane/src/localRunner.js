@@ -1,6 +1,4 @@
-// localRunner.js (ESM, no TypeScript)
-// Controls a local bot process by running backend/run.sh and streams its log file.
-
+// localRunner.js (ESM) - passes STRATEGY_CHOICE to run.sh
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -9,13 +7,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Paths relative to repo root: AutoTradePro-Crypto/
-const projectRoot = path.resolve(__dirname, '..', '..');   // /.../AutoTradePro-Crypto
-const backendRoot = path.join(projectRoot, 'backend');     // /.../backend
-const runScript   = path.join(backendRoot, 'run.sh');      // launcher
-const dataRoot    = path.join(backendRoot, 'data');        // per-bot data dir
+const projectRoot = path.resolve(__dirname, '..', '..');
+const backendRoot = path.join(projectRoot, 'backend');
+const runScript   = path.join(backendRoot, 'run.sh');
+const dataRoot    = path.join(backendRoot, 'data');
 
-/** botId -> proc info */
 const PROCS = new Map();
 
 function getPaths(botId) {
@@ -28,7 +24,8 @@ export function isRunning(botId) {
   return PROCS.has(botId);
 }
 
-export function start(botId) {
+export function start(botId, opts = {}) {
+  const { strategyChoice } = opts;
   if (isRunning(botId)) return { ok: false, reason: 'already_running' };
   if (!fs.existsSync(runScript)) {
     return { ok: false, reason: `run.sh not found at ${runScript}` };
@@ -36,10 +33,17 @@ export function start(botId) {
   const { dataDir, logPath } = getPaths(botId);
   fs.mkdirSync(dataDir, { recursive: true });
 
-  // Spawn bash to execute run.sh with the right env
   const cmd = '/bin/bash';
-  const args = ['-lc', `BOT_ID=${botId} DATA_DIR="${dataDir}" ./run.sh`];
+  const envLine = [
+    `BOT_ID=${botId}`,
+    `DATA_DIR="${dataDir}"`,
+    strategyChoice ? `STRATEGY_CHOICE=${strategyChoice}` : null,
+  ].filter(Boolean).join(' ');
+
+  const args = ['-lc', `${envLine} ./run.sh`];
   const env = { ...process.env, BOT_ID: botId, DATA_DIR: dataDir };
+  if (strategyChoice) env.STRATEGY_CHOICE = String(strategyChoice);
+
   const proc = spawn(cmd, args, { cwd: backendRoot, env });
 
   proc.stdout.on('data', d => process.stdout.write(`[${botId}] ${d}`));
@@ -59,10 +63,7 @@ export async function stop(botId) {
   if (!info) return { ok: false, reason: 'not_running' };
   try {
     info.proc.kill('SIGINT');
-    // fallback kill after 5s if still alive
-    setTimeout(() => {
-      try { info.proc.kill('SIGTERM'); } catch {}
-    }, 5000);
+    setTimeout(() => { try { info.proc.kill('SIGTERM'); } catch {} }, 5000);
     PROCS.delete(botId);
     return { ok: true };
   } catch (e) {
@@ -70,12 +71,11 @@ export async function stop(botId) {
   }
 }
 
-export async function restart(botId) {
+export async function restart(botId, opts = {}) {
   await stop(botId);
-  return start(botId);
+  return start(botId, opts);
 }
 
-/** Stream log tail to a callback; returns a disposer to stop */
 export function streamLogs(botId, onLine) {
   const { logPath } = getPaths(botId);
   let closed = false;
@@ -86,19 +86,16 @@ export function streamLogs(botId, onLine) {
     if (!fs.existsSync(logPath)) return;
     const txt = fs.readFileSync(logPath, 'utf8');
     const lines = txt.split(/\r?\n/).filter(Boolean);
-    const tail = lines.slice(-200); // last 200 lines
+    const tail = lines.slice(-200);
     tail.forEach(onLine);
   }
 
   function poller() {
     if (closed) return;
     try {
-      if (!fs.existsSync(logPath)) return; // not yet created
+      if (!fs.existsSync(logPath)) return;
       const stat = fs.statSync(logPath);
-      if (stat.size < lastSize) {
-        // file rotated/truncated
-        lastSize = 0;
-      }
+      if (stat.size < lastSize) lastSize = 0;
       if (stat.size > lastSize) {
         const stream = fs.createReadStream(logPath, { start: lastSize, end: stat.size });
         let buf = '';
@@ -109,22 +106,11 @@ export function streamLogs(botId, onLine) {
         });
         lastSize = stat.size;
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
-  // bootstrap
   sendInitial();
-  try {
-    const stat = fs.statSync(logPath);
-    lastSize = stat.size;
-  } catch { lastSize = 0; }
-
+  try { lastSize = fs.statSync(logPath).size; } catch { lastSize = 0; }
   poll = setInterval(poller, 1000);
-
-  return () => {
-    closed = true;
-    if (poll) clearInterval(poll);
-  };
+  return () => { closed = true; if (poll) clearInterval(poll); };
 }

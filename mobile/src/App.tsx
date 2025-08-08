@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { SafeAreaView, Text, Button, View, Switch, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { signInInteractive, saveTokens, getStoredTokens, clearTokens, Tokens } from './auth/b2c';
 import { apiGet, apiPost, setAuthFailedHandler } from './api';
+import BotDetail from './BotDetail';
 
 type Bot = { botId: string; strategyFile: string; symbols: string[]; status: string; mode: 'demo'|'live'; aiEnabled: boolean; };
 
@@ -12,6 +13,7 @@ export default function App() {
   const [useFaceId, setUseFaceId] = useState(false);
   const [bots, setBots] = useState<Bot[]>([]);
   const [busy, setBusy] = useState<Busy>(null);
+  const [selectedBot, setSelectedBot] = useState<Bot | null>(null);
 
   // One-time init: try to load stored tokens and register global 401 handler
   useEffect(() => {
@@ -25,6 +27,7 @@ export default function App() {
       Alert.alert('Session expired', 'Please sign in again.');
       clearTokens();
       setTokens(null);
+      setSelectedBot(null);
     });
     return () => setAuthFailedHandler(() => {});
   }, []);
@@ -39,6 +42,7 @@ export default function App() {
   async function signOut() {
     await clearTokens();
     setTokens(null);
+    setSelectedBot(null);
   }
 
   // TEMP: Dev login (no B2C) — works because ALLOW_INSECURE_DEV=true on the API
@@ -52,6 +56,11 @@ export default function App() {
     if (!tokens) return;
     const data = await apiGet<Bot[]>('/bots', tokens.access_token);
     setBots(data);
+    // Keep selected bot in sync
+    if (selectedBot) {
+      const latest = data.find(b => b.botId === selectedBot.botId);
+      if (latest) setSelectedBot(latest);
+    }
   }
 
   async function doBotAction(id: string, action: 'start'|'stop'|'restart') {
@@ -86,6 +95,10 @@ export default function App() {
     );
   }
 
+  if (selectedBot) {
+    return <BotDetail bot={selectedBot} tokens={tokens} onBack={() => setSelectedBot(null)} />;
+  }
+
   return (
     <SafeAreaView style={{ flex:1, padding:16 }}>
       <View style={{ flexDirection:'row', justifyContent:'space-between', marginBottom:12 }}>
@@ -99,16 +112,18 @@ export default function App() {
           const isBusy = busy?.id === item.botId;
           const label = (a: Busy['action']) => (isBusy && busy?.action === a ? a[0].toUpperCase()+a.slice(1)+'…' : a[0].toUpperCase()+a.slice(1));
           return (
-            <TouchableOpacity style={{ padding:12, borderWidth:1, borderRadius:8, marginBottom:8 }} activeOpacity={0.9}>
+            <TouchableOpacity style={{ padding:12, borderWidth:1, borderRadius:8, marginBottom:8 }} activeOpacity={0.9} onPress={() => setSelectedBot(item)}>
               <Text style={{ fontWeight:'600' }}>{item.botId}</Text>
               <Text>{item.strategyFile} • {item.symbols.join(', ')}</Text>
               <Text>Status: {item.status} • Mode: {item.mode}</Text>
-              <View style={{ flexDirection:'row', marginTop:8 }}>
+              <View style={{ flexDirection:'row', marginTop:8, alignItems:'center' }}>
                 <Button title={label('start')} onPress={() => doBotAction(item.botId, 'start')} disabled={isBusy} />
                 <View style={{ width:8 }} />
                 <Button title={label('stop')} onPress={() => doBotAction(item.botId, 'stop')} disabled={isBusy} />
                 <View style={{ width:8 }} />
                 <Button title={label('restart')} onPress={() => doBotAction(item.botId, 'restart')} disabled={isBusy} />
+                <View style={{ width:16 }} />
+                <Button title="Logs" onPress={() => setSelectedBot(item)} />
               </View>
             </TouchableOpacity>
           );
