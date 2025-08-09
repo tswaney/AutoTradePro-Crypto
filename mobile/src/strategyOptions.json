@@ -1,0 +1,22 @@
+{
+  "simpleBuySell_v1.1": {
+    "label": "Simple Buy Low/Sell High (1.1)",
+    "options": {
+      "SIMPLE_BUY_THRESHOLD": {
+        "type": "number",
+        "unit": "%",
+        "default": 2
+      },
+      "SIMPLE_SELL_THRESHOLD": {
+        "type": "number",
+        "unit": "%",
+        "default": 1
+      },
+      "defaultSlippage": {
+        "type": "number",
+        "unit": "%",
+        "default": 2.0
+      }
+    }
+  }
+}
