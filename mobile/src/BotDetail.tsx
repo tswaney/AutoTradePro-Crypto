@@ -1,136 +1,183 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { SafeAreaView, View, Text, Button, FlatList, TextInput, TouchableOpacity, Alert } from 'react-native';
-import type { Tokens } from './auth/b2c';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  ScrollView,
+} from 'react-native';
 import { apiGet, apiPost, openLogsSocket } from './api';
+import { useSnack } from './components/Snack';
 
-type Bot = { botId: string; strategyFile: string; symbols: string[]; status: string; mode: 'demo'|'live'; aiEnabled: boolean; };
-type Strategy = { id: number; name: string; desc?: string };
+type BotStatus = 'running' | 'stopped' | 'starting' | 'stopping' | 'error';
+type Bot = { id: string; name?: string; status: BotStatus };
 
-type Props = {
-  bot: Bot;
-  tokens: Tokens;
-  onBack: () => void;
-};
+type Props = { botId: string; botName: string };
 
-type Line = { ts: number; msg: string };
+export default function BotDetail({ botId, botName }: Props) {
+  const snack = useSnack();
+  const [bot, setBot] = useState<Bot | null>(null);
+  const [inFlight, setInFlight] = useState(false);
+  const [lines, setLines] = useState<string[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView | null>(null);
 
-export default function BotDetail({ bot, tokens, onBack }: Props) {
-  const [lines, setLines] = useState<Line[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [filter, setFilter] = useState('');
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const listRef = useRef<FlatList<Line>>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-
-  // Load strategies
-  useEffect(() => {
-    (async () => {
-      try {
-        const s = await apiGet<Strategy[]>('/strategies', tokens.access_token);
-        setStrategies(s);
-      } catch (e: any) {
-        Alert.alert('Error', e?.message || 'Failed to load strategies');
-      }
-    })();
-  }, [tokens.access_token]);
-
-  // Logs socket
-  useEffect(() => {
-    const ws = openLogsSocket(bot.botId, tokens.access_token);
-    wsRef.current = ws;
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
-    ws.onmessage = (evt) => {
-      try {
-        const payload = JSON.parse(String(evt.data));
-        const msg = typeof payload?.msg === 'string' ? payload.msg : String(evt.data);
-        const ts = Number(payload?.ts) || Date.now();
-        setLines((prev) => {
-          const next = [...prev, { ts, msg }];
-          return next.length > 1000 ? next.slice(-1000) : next;
-        });
-        requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
-      } catch {
-        const s = String(evt.data || '');
-        setLines((prev) => [...prev, { ts: Date.now(), msg: s }]);
-        requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
-      }
-    };
-    return () => {
-      try { ws.close(); } catch {}
-      wsRef.current = null;
-    };
-  }, [bot.botId, tokens.access_token]);
-
-  const filtered = useMemo(() => {
-    if (!filter.trim()) return lines;
-    const f = filter.toLowerCase();
-    return lines.filter((l) => l.msg.toLowerCase().includes(f));
-  }, [lines, filter]);
-
-  async function startWithStrategy(id: number) {
+  const fetchOne = async () => {
     try {
-      await apiPost(`/bots/${bot.botId}/start`, tokens.access_token, { strategyChoice: id });
-      Alert.alert('Started', `Bot started with strategy #${id}`);
+      const data = await apiGet(`/bots/${botId}` as any, undefined);
+      setBot(data);
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Start failed');
+      snack.show?.(e?.message || 'Failed to load bot');
     }
-  }
+  };
+
+  useEffect(() => {
+    fetchOne();
+  }, [botId]);
+
+  // --- Logs: prefer WebSocket, else poll ---
+  useEffect(() => {
+    let stopped = false;
+    let ws: WebSocket | null = null;
+    try {
+      // @ts-ignore allow different signatures
+      ws = openLogsSocket?.(botId);
+      if (ws) {
+        ws.onmessage = (evt: any) => {
+          const text = typeof evt?.data === 'string' ? evt.data : JSON.stringify(evt?.data);
+          if (stopped) return;
+          setLines((prev) => {
+            const next = [...prev, text];
+            if (next.length > 500) next.splice(0, next.length - 500);
+            return next;
+          });
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 0);
+        };
+        ws.onerror = () => {};
+      }
+    } catch {}
+
+    if (!ws) {
+      // Poll every 1s: expect { lines: string[], cursor: string }
+      const timer = setInterval(async () => {
+        try {
+          const res: any = await apiGet(`/bots/${botId}/logs${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}` as any, undefined);
+          if (stopped) return;
+          if (res?.lines?.length) {
+            setLines((prev) => {
+              const next = [...prev, ...res.lines];
+              if (next.length > 500) next.splice(0, next.length - 500);
+              return next;
+            });
+            setCursor(res?.cursor || null);
+            setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 0);
+          }
+        } catch {}
+      }, 1000);
+      return () => { stopped = true; clearInterval(timer); };
+    }
+
+    return () => { stopped = true; try { ws?.close?.(); } catch {} };
+  }, [botId, cursor]);
+
+  const start = async () => {
+    if (!bot) return;
+    if (bot.status === 'running' || bot.status === 'starting') {
+      snack.show?.('Already running'); return;
+    }
+    setInFlight(true);
+    try { await apiPost(`/bots/${bot.id}/start` as any, undefined); snack.show?.('Bot started'); await fetchOne(); }
+    catch (e: any) { snack.show?.(e?.message || 'Start failed'); }
+    finally { setInFlight(false); }
+  };
+
+  const stop = async () => {
+    if (!bot) return;
+    if (bot.status !== 'running') { snack.show?.('Already stopped'); return; }
+    setInFlight(true);
+    try { await apiPost(`/bots/${bot.id}/stop` as any, undefined); snack.show?.('Bot stopped'); await fetchOne(); }
+    catch (e: any) { snack.show?.(e?.message || 'Stop failed'); }
+    finally { setInFlight(false); }
+  };
+
+  const restart = async () => {
+    if (!bot) return;
+    setInFlight(true);
+    try { await apiPost(`/bots/${bot.id}/restart` as any, undefined); snack.show?.('Bot restarted'); await fetchOne(); }
+    catch (e: any) { snack.show?.(e?.message || 'Restart failed'); }
+    finally { setInFlight(false); }
+  };
+
+  const clear = () => setLines([]);
+
+  const canStart = bot && bot.status !== 'running' && bot.status !== 'starting' && !inFlight;
+  const canStop = bot && bot.status === 'running' && !inFlight;
+  const canRestart = bot && bot.status === 'running' && !inFlight;
 
   return (
-    <SafeAreaView style={{ flex: 1, padding: 12 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <Button title="‹ Back" onPress={onBack} />
-        <Text style={{ fontWeight: '600' }}>{bot.botId}</Text>
-        <Text>{connected ? '● Live' : '○ Offline'}</Text>
-      </View>
+    <SafeAreaView style={styles.container}>
+      <View style={[styles.card, { margin: 12 }]}>
+        <Text style={styles.title}>{botName}</Text>
+        <Text style={styles.meta}>Status: {bot?.status ?? '...'}</Text>
 
-      <View style={{ marginBottom: 8 }}>
-        <Text style={{ fontSize: 12, color: '#666' }}>{bot.strategyFile} • {bot.symbols.join(', ')}</Text>
-      </View>
-
-      {/* Strategies List */}
-      <Text style={{ fontWeight: '600', marginBottom: 6 }}>Strategies</Text>
-      <FlatList
-        horizontal
-        data={strategies}
-        keyExtractor={(s) => String(s.id)}
-        showsHorizontalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={{ padding: 10, borderWidth: 1, borderRadius: 10, marginRight: 8, width: 240 }} activeOpacity={0.9}>
-            <Text style={{ fontWeight: '600' }}>#{item.id} {item.name}</Text>
-            {item.desc ? <Text style={{ color: '#666', marginTop: 4, fontSize: 12 }}>{item.desc}</Text> : null}
-            <View style={{ height: 8 }} />
-            <Button title="Start with this" onPress={() => startWithStrategy(item.id)} />
+        <View style={[styles.row, { marginTop: 8 }]}>
+          <TouchableOpacity disabled={!canStart} onPress={start} style={[styles.btn, canStart ? styles.btnPrimary : styles.btnDisabled]}>
+            <Text style={styles.btnText}>Start</Text>
           </TouchableOpacity>
-        )}
-      />
+          <TouchableOpacity disabled={!canStop} onPress={stop} style={[styles.btn, canStop ? styles.btnDanger : styles.btnDisabled]}>
+            <Text style={styles.btnText}>Stop</Text>
+          </TouchableOpacity>
+          <TouchableOpacity disabled={!canRestart} onPress={restart} style={[styles.btn, canRestart ? styles.btnWarn : styles.btnDisabled]}>
+            <Text style={styles.btnText}>Restart</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={clear} style={[styles.btn, styles.btnGhost]}>
+            <Text style={styles.btnText}>Clear</Text>
+          </TouchableOpacity>
+          {inFlight ? <ActivityIndicator style={{ marginLeft: 8 }} /> : null}
+        </View>
 
-      <View style={{ height: 12 }} />
-
-      {/* Logs */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-        <TextInput
-          placeholder="Filter logs (e.g., BUY, SELL, ERROR)"
-          value={filter}
-          onChangeText={setFilter}
-          style={{ flex: 1, borderWidth: 1, borderRadius: 8, padding: 8 }}
-        />
-        <View style={{ width: 8 }} />
-        <Button title="Clear" onPress={() => setLines([])} />
+        {/* Logs */}
+        <View style={styles.logsContainer}>
+          <ScrollView ref={(r) => (scrollRef.current = r)} style={styles.scroll} contentContainerStyle={{ padding: 10 }}>
+            {lines.length === 0 ? (
+              <Text style={{ color: '#777' }}>No logs yet…</Text>
+            ) : (
+              lines.map((ln, i) => (
+                <Text key={i} style={styles.logLine}>{ln}</Text>
+              ))
+            )}
+          </ScrollView>
+        </View>
       </View>
-
-      <FlatList
-        ref={listRef}
-        data={filtered}
-        keyExtractor={(_, idx) => String(idx)}
-        renderItem={({ item }) => (
-          <Text style={{ fontFamily: 'Courier', fontSize: 12, marginBottom: 2 }}>
-            {new Date(item.ts).toLocaleTimeString()}  {item.msg}
-          </Text>
-        )}
-      />
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  card: {
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#ddd',
+    borderRadius: 12, padding: 12, backgroundColor: '#fafafa',
+  },
+  row: { flexDirection: 'row', alignItems: 'center' },
+  title: { fontSize: 16, fontWeight: '600' },
+  meta: { marginTop: 2, color: '#666' },
+  btn: {
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 10, marginRight: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: '#ddd',
+  },
+  btnText: { fontWeight: '600' },
+  btnPrimary: { backgroundColor: '#E7F1FF' },
+  btnDanger: { backgroundColor: '#FFEAEA' },
+  btnWarn: { backgroundColor: '#FFF5E5' },
+  btnGhost: { backgroundColor: '#F2F2F2' },
+  btnDisabled: { backgroundColor: '#F7F7F7', opacity: 0.6 },
+  logsContainer: {
+    marginTop: 12, height: 260, borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ddd', borderRadius: 10, backgroundColor: '#111',
+  },
+  scroll: { flex: 1 },
+  logLine: { color: '#EAEAEA', fontFamily: 'Courier', fontSize: 12, marginBottom: 2 },
+});
