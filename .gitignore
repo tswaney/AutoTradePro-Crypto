@@ -1,0 +1,97 @@
+# ---------------------------------------
+# Environment & secrets
+# ---------------------------------------
+.env
+.env.*
+*.env
+*.pem
+*.crt
+*.cer
+*.key
+*.der
+*.p12
+*.p8
+*.pfx
+*.jks
+*.keystore
+rh_session.json
+.ed25519_key
+ed25519_seed.txt
+backend/private.pem
+
+# ---------------------------------------
+# Dependencies (all packages)
+# ---------------------------------------
+**/node_modules/
+# If you use Yarn Berry, DO NOT ignore .yarn/
+# (The .yarn/cache is intentionally committed with PnP)
+
+# ---------------------------------------
+# Build outputs / bundles / coverage
+# ---------------------------------------
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+coverage/
+**/.nyc_output/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# ---------------------------------------
+# App/platform caches
+# ---------------------------------------
+.expo/
+.expo-shared/
+.next/
+.cache/
+.parcel-cache/
+.sass-cache/
+.turbo/
+.swc/
+.eslintcache
+
+# React Native (optional — remove if you commit native projects)
+android/
+ios/
+Pods/
+
+# ---------------------------------------
+# Logs & local data
+# ---------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+**/logs/
+backend/data/
+backend/Backup_Old_Files/
+Archive/
+Backup_Old_Files/
+
+# ---------------------------------------
+# Editors / OS cruft
+# ---------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---------------------------------------
+# Python (if any backend scripts)
+# ---------------------------------------
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---------------------------------------
+# Expo/Metro temporary artifacts
+# ---------------------------------------
+*.expo

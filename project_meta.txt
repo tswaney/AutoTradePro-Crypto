@@ -1,0 +1,883 @@
+=== root package.json (if present) ===
+
+=== frontend/package.json ===
+{
+  "name": "frontend",
+  "main": "expo-router/entry",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "expo start",
+    "reset-project": "node ./scripts/reset-project.js",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "test": "jest --watchAll",
+    "lint": "expo lint"
+  },
+  "jest": {
+    "preset": "jest-expo"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.0.2",
+    "@react-navigation/bottom-tabs": "^7.2.0",
+    "@react-navigation/native": "^7.0.14",
+    "axios": "^1.8.4",
+    "expo": "~52.0.46",
+    "expo-blur": "~14.0.3",
+    "expo-constants": "~17.0.8",
+    "expo-font": "~13.0.4",
+    "expo-haptics": "~14.0.1",
+    "expo-linking": "~7.0.5",
+    "expo-router": "~4.0.20",
+    "expo-splash-screen": "~0.29.24",
+    "expo-status-bar": "~2.0.1",
+    "expo-symbols": "~0.2.2",
+    "expo-system-ui": "~4.0.9",
+    "expo-web-browser": "~14.0.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-gesture-handler": "~2.20.2",
+    "react-native-paper": "^5.13.1",
+    "react-native-reanimated": "~3.16.1",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.4.0",
+    "react-native-web": "~0.19.13",
+    "react-native-webview": "13.12.5",
+    "react-navigation": "^5.0.0",
+    "@react-native-picker/picker": "2.9.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@types/jest": "^29.5.12",
+    "@types/react": "~18.3.12",
+    "@types/react-test-renderer": "^18.3.0",
+    "jest": "^29.2.1",
+    "jest-expo": "~52.0.6",
+    "react-test-renderer": "18.3.1",
+    "typescript": "^5.3.3"
+  },
+  "private": true
+}
+
+=== mobile/package.json ===
+{
+  "name": "autotradepro-mobile-expo",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/native-stack": "^6.11.0",
+    "@types/react": "~18.2.79",
+    "expo": "~51.0.0",
+    "expo-auth-session": "~5.5.2",
+    "expo-local-authentication": "~14.0.1",
+    "expo-secure-store": "~13.0.1",
+    "expo-status-bar": "~1.12.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "0.74.3",
+    "react-native-gesture-handler": "~2.16.1",
+    "react-native-safe-area-context": "4.10.5",
+    "react-native-screens": "3.31.1",
+    "react-native-web": "~0.19.10",
+    "typescript": "~5.3.3"
+  }
+}
+
+=== backend/package.json ===
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "axios-cookiejar-support": "^6.0.2",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "json-stable-stringify": "^1.3.0",
+    "jwt-decode": "^4.0.0",
+    "node-fetch": "^2.7.0",
+    "querystring": "^0.2.1",
+    "readline": "^1.3.0",
+    "tough-cookie": "^5.1.2",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  }
+}
+
+=== control-plane/package.json ===
+{
+  "name": "autotradepro-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@react-navigation/native": "^7.1.17",
+    "@react-navigation/native-stack": "^7.3.24",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-ws": "^5.0.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "react-native-gesture-handler": "^2.28.0",
+    "react-native-safe-area-context": "^5.6.0",
+    "react-native-screens": "^4.13.1",
+    "ws": "^8.18.3"
+  }
+}
+
+=== frontend/app.json ===
+{
+  "expo": {
+    "name": "AutoTradePro Crypto",
+    "slug": "autotradepro-crypto",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "autotradepro",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
+
+=== mobile/app.json ===
+{
+  "expo": {
+    "name": "AutoTradePro",
+    "slug": "autotradepro-mobile",
+    "scheme": "autotradepro",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "sdkVersion": "51.0.0",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    }
+  }
+}
+
+=== backend/testPrice_Dev.js ===
+// backend/testPrice_dev.js
+
+"use strict";
+
+// ==============================================
+// Helper: normalize boolean env vars (true/1/yes/on)
+// ==============================================
+const asBool = (v) => /^(1|true|yes|on)$/i.test(String(v || "").trim());
+
+// ==============================================
+// Disables output buffering, making logs behave
+// exactly like a terminal
+// ==============================================
+if (
+  process.stdout &&
+  process.stdout._handle &&
+  process.stdout._handle.setBlocking
+) {
+  process.stdout._handle.setBlocking(true);
+}
+
+// ==============================================
+// Per-bot data directories (isolation)
+// ==============================================
+const fsLogger = require("fs");
+const pathLogger = require("path");
+require("dotenv").config(); // Load .env early
+
+// Each container/bot should set a unique BOT_ID, optionally a DATA_DIR
+const BOT_ID = process.env.BOT_ID || "default";
+const DATA_DIR =
+  process.env.DATA_DIR || pathLogger.join(__dirname, "data", BOT_ID);
+
+// Ensure DATA_DIR exists
+try {
+  fsLogger.mkdirSync(DATA_DIR, { recursive: true });
+} catch (err) {
+  console.error(`Failed to create DATA_DIR '${DATA_DIR}':`, err.message);
+  process.exit(1);
+}
+
+// File locations (overridable via env)
+const HOLDINGS_FILE =
+  process.env.HOLDINGS_FILE || pathLogger.join(DATA_DIR, "cryptoHoldings.json");
+const LOG_FILE = process.env.LOG_FILE || "testPrice_output.txt";
+const LOG_PATH = process.env.LOG_PATH || pathLogger.join(DATA_DIR, LOG_FILE);
+
+// Diagnostics
+console.log("DEBUG:", {
+  __dirname,
+  BOT_ID,
+  DATA_DIR,
+  HOLDINGS_FILE,
+  LOG_PATH,
+});
+
+// Create log stream and tee stdout/stderr
+const logStream = fsLogger.createWriteStream(LOG_PATH, { flags: "w" });
+const origStdout = process.stdout.write.bind(process.stdout);
+process.stdout.write = (chunk, encoding, callback) => {
+  logStream.write(chunk);
+  return origStdout(chunk, encoding, callback);
+};
+const origStderr = process.stderr.write.bind(process.stderr);
+process.stderr.write = (chunk, encoding, callback) => {
+  logStream.write(chunk);
+  return origStderr(chunk, encoding, callback);
+};
+
+// Preventing trading until after seeding process is complete
+let tradingEnabled = false;
+let soldOutSymbols = new Set();
+
+// ==============================================
+// Allow Ctrl+S / Ctrl+G key handling on UNIX terminals
+// ==============================================
+const { execSync } = require("child_process");
+if (process.stdin.isTTY) {
+  try {
+    execSync("stty -ixon", { stdio: "inherit" });
+  } catch (_) {}
+}
+
+const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
+const readline = require("readline");
+const { getAccessToken, PUBLIC_API_KEY } = require("./sessionManager");
+const { signRequest } = require("./signRequest");
+
+// ==============================================
+// Constants, env flags, and strategy config
+// ==============================================
+const TRADING_API = "https://trading.robinhood.com";
+const USER_AGENT = "Mozilla/5.0 PowerShell/7.2.0";
+
+const SIMPLE_BUY_THRESHOLD =
+  parseFloat(process.env.SIMPLE_BUY_THRESHOLD) || 2.0;
+const SIMPLE_SELL_THRESHOLD =
+  parseFloat(process.env.SIMPLE_SELL_THRESHOLD) || 3.0;
+const ENABLE_PEAK_CONFIRMATION = asBool(process.env.ENABLE_PEAK_CONFIRMATION);
+
+const TEST_MODE = asBool(process.env.TEST_MODE);
+const MAX_TEST_BUYS = parseInt(process.env.MAX_TEST_BUYS, 10) || 2;
+const MAX_TEST_SELLS = parseInt(process.env.MAX_TEST_SELLS, 10) || 2;
+const LIMIT_TO_MAX_BUY_SELL = asBool(process.env.LIMIT_TO_MAX_BUY_SELL);
+
+const LOCKED_CASH_PERCENT = parseFloat(process.env.LOCKED_CASH_PERCENT) || 20;
+const LOCKED_CASH_FRAC = Math.max(0, Math.min(LOCKED_CASH_PERCENT / 100, 1));
+
+const DEFAULT_SLIPPAGE_PCT = parseFloat(process.env.defaultSlippage) || 2.0;
+const DEFAULT_SLIPPAGE_FRAC = Math.max(
+  0,
+  Math.min(DEFAULT_SLIPPAGE_PCT / 100, 1)
+);
+
+const config = {
+  aiEnabled: asBool(process.env.AI_ENABLED),
+  demoMode: asBool(process.env.DEMO_MODE),
+  testMode: TEST_MODE,
+  limitBuysSells: LIMIT_TO_MAX_BUY_SELL,
+  initialBalance: parseFloat(process.env.INITIAL_BALANCE) || 1000,
+  minTradeAmount: 0.01,
+  baseBuyThreshold: -(SIMPLE_BUY_THRESHOLD / 100),
+  baseSellThreshold: SIMPLE_SELL_THRESHOLD / 100,
+  atrLookbackPeriod: 14,
+  gridLevels: 10,
+  defaultSlippage: DEFAULT_SLIPPAGE_FRAC,
+  priceDecimalPlaces: 8,
+  buyLimit: Infinity,
+  sellLimit: Infinity,
+  stopLossLimit: null,
+  stopLossPercent: -0.3,
+  dailyProfitTarget: null,
+  checkInterval: 30 * 1000,
+  strategy: "",
+  enablePeakFilter: ENABLE_PEAK_CONFIRMATION,
+};
+
+console.log(`\n=== Running in ${config.demoMode ? "DEMO" : "LIVE"} mode ===`);
+if (config.testMode) {
+  console.log(
+    `🧪 TEST_MODE: trades simulated${config.limitBuysSells ? " (capped)" : ""}`
+  );
+}
+console.log(
+  `Peak-confirmation on BUY is ${
+    config.enablePeakFilter ? "ENABLED" : "DISABLED"
+  }`
+);
+console.log("Press CTRL+S for Status, CTRL+G for Grid, CTRL+C to exit\n");
+
+// ==============================================
+// Portfolio State and Strategy Setup
+// ==============================================
+const BASE_URL = "https://api.robinhood.com/marketdata/forex/quotes/";
+let portfolio = {
+  cashReserve: parseFloat(config.initialBalance.toFixed(2)),
+  lockedCash: 0,
+  cryptos: {},
+  buysToday: 0,
+  sellsToday: 0,
+  stopLossesToday: 0,
+  dailyProfitTotal: 0,
+  startTime: new Date(),
+  lastReset: new Date(),
+  initialCryptoValue: 0,
+  beginningPortfolioValue: 0,
+};
+let strategies = {};
+let selectedStrategy = null;
+let firstCycleDone = false;
+
+// === Graceful shutdown controls ===
+let shuttingDown = false;
+let cycleInFlight = null;
+
+// ==============================================
+// Helper: initialize per-symbol strategy state
+// ==============================================
+function initializeStrategy(symbol) {
+  return {
+    buyThreshold: config.baseBuyThreshold,
+    sellThreshold: config.baseSellThreshold,
+    atr: 0,
+    dynamicBuyThreshold: null,
+    dynamicSellThreshold: null,
+    trend: "neutral",
+    slippage: config.defaultSlippage,
+    priceHistory: [],
+    trendHistory: [],
+    lastPrice: null,
+    module: null,
+    grid: [],
+  };
+}
+
+// ==============================================
+// Prompt user to pick a strategy (supports env/CI)
+// ==============================================
+
+=== backend/testPrice.js ===
+// backend/testPrice.js
+
+'use strict';
+
+// ==============================================
+// Redirect all stdout & stderr to a log file
+// ==============================================
+const fsLogger   = require('fs');
+const pathLogger = require('path');
+const logFilePath = pathLogger.join(__dirname, 'testPrice_output.txt');
+const logStream   = fsLogger.createWriteStream(logFilePath, { flags: 'w' });
+
+const origStdout = process.stdout.write.bind(process.stdout);
+process.stdout.write = (chunk, encoding, callback) => {
+  logStream.write(chunk);
+  origStdout(chunk, encoding, callback);
+};
+const origStderr = process.stderr.write.bind(process.stderr);
+process.stderr.write = (chunk, encoding, callback) => {
+  logStream.write(chunk);
+  origStderr(chunk, encoding, callback);
+};
+
+// ==============================================
+// Grid Bot with Strategy Selection, Manual Holdings,
+// Simulated Trading, and Status Shortcut (Ctrl+S) + Grid View (Ctrl+G)
+// ==============================================
+
+// Allow Ctrl+S / Ctrl+G key handling on UNIX terminals
+const { execSync } = require('child_process');
+if (process.stdin.isTTY) {
+  try { execSync('stty -ixon', { stdio: 'inherit' }); } catch (_) {}
+}
+
+// Load environment variables from .env
+require('dotenv').config();
+
+// Core modules
+const axios    = require('axios');
+const fs       = require('fs');
+const path     = require('path');
+const readline = require('readline');
+const { getAccessToken, PUBLIC_API_KEY } = require('./sessionManager');
+const { signRequest }                  = require('./signRequest');
+
+// Constants
+const TRADING_API = 'https://trading.robinhood.com';
+const USER_AGENT  = 'Mozilla/5.0 PowerShell/7.2.0';
+
+// ==============================================
+// Read thresholds and feature flags from .env
+// ==============================================
+const SIMPLE_BUY_THRESHOLD     = parseFloat(process.env.SIMPLE_BUY_THRESHOLD)  || 2.0;
+const SIMPLE_SELL_THRESHOLD    = parseFloat(process.env.SIMPLE_SELL_THRESHOLD) || 3.0;
+const ENABLE_PEAK_CONFIRMATION = process.env.ENABLE_PEAK_CONFIRMATION === 'true';
+
+// ==============================================
+// TEST MODE CONFIGURATION
+// ==============================================
+const TEST_MODE               = process.env.TEST_MODE === 'true';
+const MAX_TEST_BUYS           = parseInt(process.env.MAX_TEST_BUYS, 10) || 2;
+const MAX_TEST_SELLS          = parseInt(process.env.MAX_TEST_SELLS, 10) || 2;
+const LIMIT_TO_MAX_BUY_SELL   = process.env.LIMIT_TO_MAX_BUY_SELL === 'true';
+
+// ==============================================
+// Configuration (tunable parameters by strategy)
+// ==============================================
+const config = {
+  aiEnabled:           process.env.AI_ENABLED      === 'true',
+  demoMode:            process.env.DEMO_MODE       === 'true',
+  testMode:            TEST_MODE,
+  limitBuysSells:      LIMIT_TO_MAX_BUY_SELL,
+  initialBalance:      parseFloat(process.env.INITIAL_BALANCE) || 1000,
+  minTradeAmount:      0.01,
+  baseBuyThreshold:   -(SIMPLE_BUY_THRESHOLD  / 100),
+  baseSellThreshold:   SIMPLE_SELL_THRESHOLD / 100,
+  atrLookbackPeriod:   14,
+  gridLevels:          5,
+  defaultSlippage:     0.02,
+  priceDecimalPlaces:  8,
+  buyLimit:            Infinity,
+  sellLimit:           Infinity,
+  stopLossLimit:       null,
+  stopLossPercent:    -0.3,
+  dailyProfitTarget:   null,
+  checkInterval:      30 * 1000,
+  strategy:           '',
+  enablePeakFilter:    ENABLE_PEAK_CONFIRMATION
+};
+
+console.log(`\n=== Running in ${config.demoMode ? 'DEMO' : 'LIVE'} mode ===`);
+if (config.testMode) {
+  console.log(`🧪 TEST_MODE: trades simulated${config.limitBuysSells ? ' (capped)' : ''}`);
+}
+console.log(`Peak-confirmation on BUY is ${config.enablePeakFilter ? 'ENABLED' : 'DISABLED'}`);
+console.log("Press CTRL+S for Status, CTRL+G for Grid, CTRL+C to exit\n");
+
+// ==============================================
+// API & Portfolio State
+// ==============================================
+const BASE_URL = 'https://api.robinhood.com/marketdata/forex/quotes/';
+let portfolio = {
+  cashReserve:            config.initialBalance,
+  lockedCash:             0,
+  cryptos:                {},
+  buysToday:              0,
+  sellsToday:             0,
+  stopLossesToday:        0,
+  dailyProfitTotal:       0,
+  startTime:              new Date(),
+  lastReset:              new Date(),
+  initialCryptoValue:     0,
+  beginningPortfolioValue:0,
+};
+let strategies       = {};
+let selectedStrategy = null;
+let firstCycleDone   = false;
+
+// ==============================================
+// Fetch live crypto-only buying power
+// ==============================================
+async function fetchCryptoBuyingPower() {
+  console.log('>>> Entered fetchCryptoBuyingPower()');
+  const token     = await getAccessToken();
+  console.log('>>> Token present:', Boolean(token));
+
+  const path      = "/api/v1/crypto/billing/buying_power/";
+  const url       = `${TRADING_API}${path}`;
+  const timestamp = Math.floor(Date.now()/1000).toString();
+
+  // Build payload exactly like liveTestBonk (no body)
+  const payload   = `${timestamp}GET${path}`;
+  console.log(">>> signing payload:", payload);
+
+  const signature = signRequest(
+    PUBLIC_API_KEY,
+    timestamp,
+    path,
+    "GET",
+    null
+  );
+  console.log(">>> generated signature:", signature);
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "User-Agent":  USER_AGENT,
+    Accept:        "application/json",
+    Origin:        "https://robinhood.com",
+    "x-api-key":   PUBLIC_API_KEY,
+    "x-timestamp": timestamp,
+    "x-signature": signature
+  };
+  console.log(">>> fetchBuyingPower headers:", headers);
+
+  try {
+    const resp = await axios.get(url, { headers, timeout: 10000 });
+    console.log(">>> buying-power response:", resp.data);
+    return parseFloat(resp.data.crypto_buying_power);
+  } catch (err) {
+    console.error("❌ Buying-power fetch failed:",
+      err.response?.status,
+      err.response?.data || err.message
+    );
+    return null;
+  }
+}
+
+// ==============================================
+// Helper: initialize per-symbol strategy state
+// ==============================================
+function initializeStrategy(symbol) {
+  return {
+    buyThreshold:        config.baseBuyThreshold,
+    sellThreshold:       config.baseSellThreshold,
+    atr:                 0,
+    dynamicBuyThreshold: null,
+    dynamicSellThreshold:null,
+    trend:               'neutral',
+    slippage:            config.defaultSlippage,
+    priceHistory:        [],
+    trendHistory:        [],
+    lastPrice:           null,
+    module:              null,
+    grid:                []
+  };
+}
+
+// ==============================================
+// Prompt user to pick a strategy
+// ==============================================
+async function promptStrategySelection() {
+  const files = fs.readdirSync(path.join(__dirname, 'strategies'))
+                  .filter(f => f.endsWith('.js'))
+                  .sort();
+  const modules = files
+    .map(f => require(`./strategies/${f}`))
+    .filter(m => m.name && m.version && m.description);
+
+  console.log('\n📌 Available Strategies:');
+  modules.forEach((s, i) =>
+
+=== backend/signRequest.js ===
+// signRequest.js
+const nacl = require("tweetnacl");
+const util = require("tweetnacl-util");
+require("dotenv").config();
+
+if (!process.env.ED25519_PRIVATE_KEY) {
+  throw new Error("Set ED25519_PRIVATE_KEY in your .env (44-char base64 seed)");
+}
+const privSeed = util.decodeBase64(process.env.ED25519_PRIVATE_KEY);
+if (privSeed.length !== nacl.sign.seedLength) {
+  throw new Error(
+    `Invalid ED25519 seed length: ${privSeed.length} bytes (expected ${nacl.sign.seedLength})`
+  );
+}
+const keyPair = nacl.sign.keyPair.fromSeed(privSeed);
+
+/**
+ * signRequest (Robinhood 2024 crypto API)
+ * @param {string} apiKey    — PUBLIC_API_KEY (not used in signature message)
+ * @param {string} timestamp — unix-seconds string
+ * @param {string} path      — exact API path, e.g. "/api/v1/crypto/trading/orders/"
+ * @param {string} method    — "GET", "POST" (uppercase)
+ * @param {object|null} body — The request body object (or null/undefined for GET)
+ * @returns {string} Base64 signature
+ */
+function signRequest(apiKey, timestamp, path, method, body) {
+  // 1. Print all inputs
+  console.log("=== SIGN REQUEST INPUTS ===");
+  console.log("apiKey:      ", apiKey);
+  console.log("timestamp:   ", timestamp);
+  console.log("path:        ", path);
+  console.log("method:      ", method);
+  console.log("body:        ", typeof body === "string" ? body : JSON.stringify(body));
+
+  // 2. Build the message
+  let message = apiKey + timestamp + path + method.toUpperCase();
+  if (body) {
+    message += typeof body === "string" ? body : JSON.stringify(body);
+  }
+
+  // 3. Print the final message string and its hex/bytes
+  console.log("\n=== DEBUG SIGNING MESSAGE (string) ===\n", message);
+  console.log("\n=== DEBUG SIGNING MESSAGE (hex) ===\n", Buffer.from(message, 'utf8').toString('hex'));
+  console.log("=== DEBUG SIGNING MESSAGE (length) ===", Buffer.from(message, 'utf8').length);
+
+  // 4. Generate and print the signature
+  const msgBytes = util.decodeUTF8(message);
+  const sigBytes = nacl.sign.detached(msgBytes, keyPair.secretKey);
+  const sigBase64 = util.encodeBase64(sigBytes);
+  console.log("=== DEBUG SIGNATURE (base64) ===", sigBase64);
+
+  return sigBase64;
+}
+
+module.exports = { signRequest };
+
+=== backend/robinhood_api.js ===
+// backend/testPrice.js
+
+// ==============================================
+// Grid Bot with Strategy Selection, Manual Holdings,
+// Simulated Trading, and Status Shortcut (Ctrl+S) + Grid View (Ctrl+G)
+// ==============================================
+
+// Allow Ctrl+S / Ctrl+G key handling on UNIX terminals
+const { execSync } = require('child_process');
+if (process.stdin.isTTY) {
+  try {
+    // disable flow control so we can intercept Ctrl+S / Ctrl+G
+    execSync('stty -ixon', { stdio: 'inherit' });
+  } catch (_) {
+    // ignore on non-Unix
+  }
+}
+
+// Load environment variables from .env
+require('dotenv').config();
+
+// Core modules
+const axios    = require('axios');
+const fs       = require('fs');
+const path     = require('path');
+const readline = require('readline');
+
+// Robinhood session (no signing needed for /accounts/)
+const { getAccessToken } = require('./sessionManager');
+
+// ==============================================
+// Thresholds from .env (whole-number percentages)
+// ==============================================
+const SIMPLE_BUY_THRESHOLD  = parseFloat(process.env.SIMPLE_BUY_THRESHOLD)  || 2.0; // e.g. "2.0" → 2%
+const SIMPLE_SELL_THRESHOLD = parseFloat(process.env.SIMPLE_SELL_THRESHOLD) || 3.0;
+
+// ==============================================
+// Configurable parameters
+// ==============================================
+const config = {
+  aiEnabled:          process.env.AI_ENABLED   === 'true',
+  demoMode:           process.env.DEMO_MODE    === 'true',
+  initialBalance:     parseFloat(process.env.INITIAL_BALANCE) || 1000,
+  minTradeAmount:     0.01,
+  baseBuyThreshold:   -(SIMPLE_BUY_THRESHOLD / 100),
+  baseSellThreshold:   SIMPLE_SELL_THRESHOLD / 100,
+  atrLookbackPeriod:  14,
+  gridLevels:         5,
+  defaultSlippage:    0.02,
+  priceDecimalPlaces: 8,
+  buyLimit:           Infinity,
+  sellLimit:          Infinity,
+  stopLossLimit:      null,
+  stopLossPercent:   -0.3,
+  dailyProfitTarget:  null,
+  checkInterval:     30 * 1000,
+  strategy:          '',
+};
+
+// API base URLs
+const MARKETDATA_API = 'https://api.robinhood.com';
+
+console.log(`\n=== Running in ${config.demoMode ? 'DEMO' : 'LIVE'} mode ===`);
+console.log("Press CTRL+S for Status, CTRL+G for Grid view, CTRL+C to exit\n");
+
+// ==============================================
+// FETCH CURRENT BUYING POWER (no signature, public accounts endpoint)
+// ==============================================
+async function getBuyingPower() {
+  const token = await getAccessToken();
+  try {
+    const resp = await axios.get(`${MARKETDATA_API}/accounts/`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'User-Agent':  'Mozilla/5.0',
+        Accept:        'application/json',
+        Origin:        'https://robinhood.com',
+      }
+    });
+    // find the crypto account result
+    const acct = resp.data.results.find(a => a.account_type === 'crypto');
+    // fallback if not found
+    const bp   = acct?.crypto_buying_power ?? resp.data.results[0]?.crypto_buying_power;
+    return parseFloat(bp) || 0;
+  } catch (err) {
+    console.error('❌ Buying-power fetch failed:', err.message);
+    return 0;
+  }
+}
+
+// ==============================================
+// Portfolio & In‐Memory State
+// ==============================================
+let portfolio = {
+  cashReserve:            config.initialBalance,
+  lockedCash:             0,
+  cryptos:                {},    // symbol → { amount, costBasis, grid }
+  buysToday:              0,
+  sellsToday:             0,
+  stopLossesToday:        0,
+  dailyProfitTotal:       0,
+  startTime:              new Date(),
+  beginningPortfolioValue:0,
+};
+
+let strategies       = {};  // symbol → strategy state
+let selectedStrategy = null;
+let firstCycleDone   = false;
+
+// ==============================================
+// Initialize per‐symbol strategy state
+// ==============================================
+function initializeStrategy(symbol) {
+  return {
+    buyThreshold:        config.baseBuyThreshold,
+    sellThreshold:       config.baseSellThreshold,
+    atr:                 0,
+    dynamicBuyThreshold: null,
+    dynamicSellThreshold:null,
+    trend:               'neutral',
+    slippage:            config.defaultSlippage,
+    priceHistory:        [],
+    trendHistory:        [],
+    lastPrice:           null,
+    module:              null,
+    recent24h:           [],
+    grid:                [],
+  };
+}
+
+// ==============================================
+// Prompt user to pick a strategy
+// ==============================================
+async function promptStrategySelection() {
+  const files = fs.readdirSync(path.join(__dirname, 'strategies'))
+                   .filter(f => f.endsWith('.js')).sort();
+  const modules = files
+    .map(f => require(`./strategies/${f}`))
+    .filter(m => m.name && m.version && m.description);
+
+  console.log('\n📌 Available Strategies:');
+  modules.forEach((s, i) => {
+    console.log(` [${i+1}] ${s.name} (${s.version}) - ${s.description}`);
+  });
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question('\nSelect strategy [default 4]: ', input => {
+      rl.close();
+      const idx = parseInt(input.trim(), 10);
+      const strat = modules[(idx>0 && idx<=modules.length) ? idx-1 : 3];
+      config.strategy  = `${strat.name} (${strat.version})`;
+      selectedStrategy = strat;
+      process.stdin.resume();
+      resolve();
+    });
+  });
+}
+
+// ==============================================
+// Load holdings from disk & seed grids
+// ==============================================
+function loadHoldings() {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'cryptoHoldings.json'), 'utf8'));
+  for (const sym in data) {
+    const { amount, costBasis } = data[sym];
+    if (amount > config.minTradeAmount) {
+      portfolio.cryptos[sym] = {
+        amount,
+        costBasis,
+        grid: [{ price: costBasis, amount, time: Date.now() }]
+      };
+    }
+  }
+}
+function seedStrategyGrids() {
+  Object.keys(portfolio.cryptos).forEach(sym => {
+    strategies[sym].grid = [...portfolio.cryptos[sym].grid];
+  });
+}
+
+// ==============================================
+// (Demo) Refresh costBasis to live price
+// ==============================================
+async function refreshDemoCostBasis() {
+  for (const sym of Object.keys(portfolio.cryptos)) {
+    const info = await getPrice(sym);
+    if (info) portfolio.cryptos[sym].costBasis = info.price;
+  }
+  fs.writeFileSync(
+    path.join(__dirname, 'cryptoHoldings.json'),
+    JSON.stringify(portfolio.cryptos, null, 2)
+  );
+}
+
+// ==============================================
+// Print holdings table
+// ==============================================
+function printHoldingsTable() {
+  const rows = Object.entries(portfolio.cryptos).map(([sym, {amount,costBasis}],i)=>({
+
+=== frontend/src/components/BotCard.js ===

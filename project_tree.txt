@@ -1,0 +1,184 @@
+.
+├── backend
+│   ├── .ed25519_key
+│   ├── .env
+│   ├── .env.template
+│   ├── .gitignore
+│   ├── available_cryptos.json
+│   ├── Backup_Old_Files
+│   │   ├── 07192025_liveTestBonk.js
+│   │   ├── 07292025_Buys_Worked_but_Sold_At_Negative_PL_testPrice_dev copy.js
+│   │   ├── 07292025_testPrice_dev.js
+│   │   ├── 07302025_Restored_testPrice_dev .js
+│   │   └── 08012025_env_backup.txt
+│   ├── checkKey.js
+│   ├── cryptoBuyingPower.js
+│   ├── data
+│   │   ├── default
+│   │   │   ├── cryptoHoldings.json
+│   │   │   └── testPrice_output.txt
+│   │   ├── local-test
+│   │   │   └── testPrice_output.txt
+│   │   └── strat-moderate-btc
+│   │       └── testPrice_output.txt
+│   ├── Dockerfile
+│   ├── ed25519_pub_base64.txt
+│   ├── ed25519_seed.txt
+│   ├── fetchAccountID.js
+│   ├── fetchAuthToken.js
+│   ├── fetchCryptoWallets.js
+│   ├── fetchPairID.js
+│   ├── generate_ed25519.js
+│   ├── getCryptoHoldings.js
+│   ├── liveTestBonk copy.js
+│   ├── liveTestBonk.js
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── portfolio.json
+│   ├── public.der
+│   ├── refreshToken.js
+│   ├── rh_session.json
+│   ├── robinhood_api.js
+│   ├── robinhood_ed25519
+│   ├── robinhood_ed25519.pub
+│   ├── run.sh
+│   ├── sessionManager.js
+│   ├── signRequest.js
+│   ├── strategies
+│   │   ├── dynamicRegimeSwitching.js
+│   │   ├── dynamicRegimeSwitchingProfitLock.js
+│   │   ├── moderateRetainMode_v1.js
+│   │   ├── moderateRetainMode_v2.js
+│   │   ├── moderateRetainMode_v3.js
+│   │   ├── moderateRetainMode_v4.js
+│   │   ├── simpleBuySell_v1.1.js
+│   │   ├── superAdaptiveStrategy.js
+│   │   ├── ultimateSafetyProfitStrategy_v2.js
+│   │   └── ultimateSafetyProfitStrategy.js
+│   ├── syncCryptoHoldings.js
+│   ├── testPortfolio.js
+│   ├── testPrice_Dev.js
+│   ├── testPrice.js
+│   ├── trades.json
+│   └── Works_testPrice_Dev.js
+├── control-plane
+│   ├── .env
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── README.md
+│   └── src
+│       ├── .env
+│       ├── auth.js
+│       ├── index.js
+│       ├── localRunner.js
+│       ├── localRunner.ts
+│       └── routes
+│           ├── bots.js
+│           └── strategies.js
+├── Docs
+│   ├── Archive_Trading_Strategy_Docs.zip
+│   └── Current_Trading_Strategies.docx
+├── frontend
+│   ├── .gitignore
+│   ├── app
+│   │   ├── _layout.tsx
+│   │   ├── (tabs)
+│   │   │   ├── _layout.tsx
+│   │   │   ├── explore.tsx
+│   │   │   └── index.tsx
+│   │   ├── +not-found.tsx
+│   │   └── index.js
+│   ├── app.js
+│   ├── app.json
+│   ├── assets
+│   │   ├── fonts
+│   │   │   └── SpaceMono-Regular.ttf
+│   │   └── images
+│   │       ├── adaptive-icon.png
+│   │       ├── favicon.png
+│   │       ├── icon.png
+│   │       ├── partial-react-logo.png
+│   │       ├── react-logo.png
+│   │       ├── react-logo@2x.png
+│   │       ├── react-logo@3x.png
+│   │       └── splash-icon.png
+│   ├── constants
+│   │   └── Colors.ts
+│   ├── expo-env.d.ts
+│   ├── hooks
+│   │   ├── useColorScheme.ts
+│   │   ├── useColorScheme.web.ts
+│   │   └── useThemeColor.ts
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── README.md
+│   ├── scripts
+│   │   └── reset-project.js
+│   ├── src
+│   │   ├── components
+│   │   │   ├── __tests__
+│   │   │   │   ├── __snapshots__
+│   │   │   │   └── ThemedText-test.tsx
+│   │   │   ├── BotCard.js
+│   │   │   ├── Collapsible.tsx
+│   │   │   ├── ExternalLink.tsx
+│   │   │   ├── HapticTab.tsx
+│   │   │   ├── HelloWave.tsx
+│   │   │   ├── ParallaxScrollView.tsx
+│   │   │   ├── ThemedText.tsx
+│   │   │   ├── ThemedView.tsx
+│   │   │   └── ui
+│   │   │       ├── IconSymbol.ios.tsx
+│   │   │       ├── IconSymbol.tsx
+│   │   │       ├── TabBarBackground.ios.tsx
+│   │   │       └── TabBarBackground.tsx
+│   │   ├── screens
+│   │   │   └── HomeScreen.js
+│   │   ├── services
+│   │   │   ├── apiService.js
+│   │   │   └── authService.js
+│   │   └── utils
+│   │       └── formatters.js
+│   └── tsconfig.json
+├── mobile
+│   ├── App.js
+│   ├── app.json
+│   ├── index.js
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── README.md
+│   ├── src
+│   │   ├── api
+│   │   │   └── client.ts
+│   │   ├── api.ts
+│   │   ├── App.tsx
+│   │   ├── auth
+│   │   │   └── b2c.ts
+│   │   ├── BotDetail.tsx
+│   │   ├── components
+│   │   │   ├── BotCard.tsx
+│   │   │   ├── LogViewer.tsx
+│   │   │   ├── Snack.tsx
+│   │   │   └── VirtualLogList.tsx
+│   │   ├── config.ts
+│   │   ├── hooks
+│   │   │   └── useAsyncAction.ts
+│   │   ├── screens
+│   │   │   ├── Auth.tsx
+│   │   │   ├── BotDetailScreen.tsx
+│   │   │   ├── BotHub.jsx
+│   │   │   ├── Logs.jsx
+│   │   │   ├── PortfolioSummary.jsx
+│   │   │   └── SignInScreen.tsx
+│   │   ├── store
+│   │   │   ├── botsSlice.ts
+│   │   │   └── index.ts
+│   │   ├── strategyOptions.json
+│   │   ├── theme
+│   │   │   └── designSystem.ts
+│   │   └── types.ts
+│   └── tsconfig.json
+├── project_meta.txt
+└── project_tree.txt
+
+38 directories, 144 files

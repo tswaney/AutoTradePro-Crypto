@@ -1,63 +1,80 @@
-import React from 'react';
-import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+import React, { useState } from 'react';
+import { ActivityIndicator, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { apiPost } from '../api';
 import { useSnack } from '../components/Snack';
 
-export default function Auth({ navigation, onSignedIn }: any) {
+const SIGNED_KEY = 'autotradepro.signedIn';
+
+export default function Auth({ onSignedIn }: { onSignedIn: () => void }) {
   const snack = useSnack();
+  const [busy, setBusy] = useState<'sign'|'sample'|null>(null);
 
   const signIn = async () => {
-    // If you have a real sign-in, call it here then:
-    onSignedIn?.();
-    snack.show?.('Signed in');
+    if (busy) return;
+    setBusy('sign');
+    try {
+      // if you have a real auth, call it here; for now we just set a flag
+      await SecureStore.setItemAsync(SIGNED_KEY, '1');
+      onSignedIn();
+    } catch (e: any) {
+      snack.show?.(e?.message || 'Sign-in failed');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const useSample = async () => {
-    onSignedIn?.();
-    snack.show?.('Using sample bot');
+    if (busy) return;
+    setBusy('sample');
+    try {
+      await SecureStore.setItemAsync(SIGNED_KEY, '1');
+      // optional: spin up a demo bot, ignore errors
+      try { await apiPost('/bots/local-test/start'); } catch {}
+      onSignedIn();
+    } catch (e: any) {
+      snack.show?.(e?.message || 'Failed to continue');
+    } finally {
+      setBusy(null);
+    }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.box}>
-        <Text style={styles.title}>AutoTradePro Crypto</Text>
-        <Text style={styles.subtitle}>Sign in to continue or try the sample bot.</Text>
-
-        <View style={{ height: 16 }} />
-
-        <TouchableOpacity onPress={signIn} style={styles.btn}>
-          <Text style={styles.btnText}>Sign in</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 10 }} />
-
-        <TouchableOpacity onPress={useSample} style={[styles.btn, styles.btnGhost]}>
-          <Text style={[styles.btnText, { color: '#0A63FF' }]}>Use Sample Bot</Text>
-        </TouchableOpacity>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <View style={styles.container}>
+        <Text style={styles.brand}>AutoTradePro</Text>
+        <View style={styles.card}>
+          <TouchableOpacity onPress={signIn} disabled={busy!==null} style={[styles.bigBtn, styles.bigBtnPrimary, busy && styles.bigBtnDisabled]}>
+            <Text style={styles.bigBtnText}>{busy==='sign' ? 'Signing in…' : 'Sign in'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={useSample} disabled={busy!==null} style={[styles.bigBtn, styles.bigBtnGhost, busy && styles.bigBtnDisabled]}>
+            <Text style={styles.bigBtnText}>{busy==='sample' ? 'Continuing…' : 'Use Sample Bot'}</Text>
+          </TouchableOpacity>
+        </View>
+        {busy && <ActivityIndicator style={{ marginTop: 16 }} />}
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  box: {
-    width: '86%',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ddd',
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  brand: { fontSize: 28, fontWeight: '800', marginBottom: 16 },
+  card: {
+    width: '88%',
     borderRadius: 16,
     padding: 16,
-    backgroundColor: '#fafafa',
+    backgroundColor: '#F9FAFB',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
   },
-  title: { fontSize: 20, fontWeight: '700' },
-  subtitle: { marginTop: 6, color: '#666' },
-  btn: {
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 10,
-    backgroundColor: '#0A63FF',
+  bigBtn: {
+    borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginVertical: 6,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#D1D5DB',
   },
-  btnGhost: {
-    backgroundColor: '#E7F1FF',
-  },
-  btnText: { color: 'white', fontWeight: '700' },
+  bigBtnPrimary: { backgroundColor: '#E7F1FF' },
+  bigBtnGhost: { backgroundColor: '#F2F2F2' },
+  bigBtnDisabled: { opacity: 0.6 },
+  bigBtnText: { fontSize: 16, fontWeight: '600' },
 });

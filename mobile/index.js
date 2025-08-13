@@ -1,3 +1,3 @@
 import { registerRootComponent } from "expo";
-import App from "./src/App";
+import App from "./App"; // points to mobile/App.tsx (or .js)
 registerRootComponent(App);

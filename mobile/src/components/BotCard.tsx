@@ -1,122 +1,78 @@
 // mobile/src/components/BotCard.tsx
-import React from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
-import { useAsyncAction } from "../hooks/useAsyncAction";
-import { useSnack } from "./Snack";
-import { apiGet, apiPost, apiPatch } from "../api"; // adjust if your paths differ
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { colors, spacing, radii, typography, cardStyle } from '../theme/designSystem';
+import { BotSummary, BotStatus } from '../types';
 
-export type Bot = {
-  botId: string;
-  status: "running" | "stopped" | string;
-  mode?: string;
-  aiEnabled?: boolean;
-  strategyFile?: string | null;
-  symbols?: string[];
-  updatedAt?: string;
+type Props = {
+  name: string;
+  id: string;
+  status: BotStatus;
+  summary?: BotSummary;
+  onStart: () => void;
+  onStop: () => void;
+  onOpen: () => void;
 };
 
-export default function BotCard({
-  bot,
-  onRefresh,
-}: {
-  bot: Bot;
-  onRefresh: () => Promise<void> | void;
-}) {
-  const snack = useSnack();
-
-  const start = useAsyncAction(async () => {
-    await apiPost(`/bots/${bot.botId}/start`, {
-      strategyFile: bot.strategyFile ?? "moderateRetainMode_v4.js",
-      symbols: bot.symbols ?? ["BTCUSD", "SOLUSD"],
-      mode: bot.mode ?? "demo",
-      aiEnabled: bot.aiEnabled ?? true,
-    });
-    snack.show("Bot started");
-    await onRefresh();
-  });
-
-  const stop = useAsyncAction(async () => {
-    await apiPost(`/bots/${bot.botId}/stop`, {});
-    snack.show("Bot stopped");
-    await onRefresh();
-  });
-
-  const restart = useAsyncAction(async () => {
-    await apiPost(`/bots/${bot.botId}/restart`, {});
-    snack.show("Bot restarted");
-    await onRefresh();
-  });
-
-  const logs = () => {
-    // navigate to your logs screen if you have one; otherwise no-op
-    snack.show("Opening logs…");
-  };
-
+export default function BotCard({ name, id, status, summary, onStart, onStop, onOpen }: Props) {
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>{bot.botId}</Text>
-      <Text style={styles.meta}>
-        {bot.strategyFile ?? "—"} • {(bot.symbols || []).join(", ") || "—"}
-      </Text>
-      <Text style={styles.meta}>
-        Status: {bot.status} • Mode: {bot.mode || "—"}
-      </Text>
-
-      <View style={styles.row}>
-        <ButtonSmall label="Start" onPress={start.run} disabled={start.busy || stop.busy || restart.busy} />
-        <ButtonSmall label="Stop" onPress={stop.run} disabled={start.busy || stop.busy || restart.busy} />
-        <ButtonSmall label="Restart" onPress={restart.run} disabled={start.busy || stop.busy || restart.busy} />
-        <ButtonSmall label="Logs" onPress={logs} />
+    <TouchableOpacity activeOpacity={0.9} onPress={onOpen} style={styles.card}>
+      <View style={styles.header}>
+        <Text style={styles.title}>{name}</Text>
+        <View style={styles.badges}>
+          <Text style={[styles.badge, styles[status]]}>{status.toUpperCase()}</Text>
+        </View>
       </View>
-    </View>
-  );
-}
 
-function ButtonSmall({
-  label,
-  onPress,
-  disabled,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={disabled ? undefined : onPress}
-      style={({ pressed }) => [
-        styles.btn,
-        disabled && styles.btnDisabled,
-        pressed && !disabled && styles.btnPressed,
-      ]}
-    >
-      <Text style={[styles.btnText, disabled && styles.btnTextDisabled]}>{label}</Text>
-    </Pressable>
+      {summary && (
+        <View style={styles.summary}>
+          <Text style={styles.summaryHeader}>=== TOTAL PORTFOLIO SUMMARY ===</Text>
+          <View style={{height: spacing(0.5)}} />
+          <Text style={styles.row}>Beginning Portfolio Value: <Text style={styles.value}>${"" + summary.beginningValue.toFixed(2)}</Text></Text>
+          <Text style={styles.row}>Duration: <Text style={styles.value}>{summary.duration}</Text></Text>
+          <Text style={styles.row}>Buys: <Text style={styles.value}>{summary.buys}</Text></Text>
+          <Text style={styles.row}>Sells: <Text style={styles.value}>{summary.sells}</Text></Text>
+          <Text style={styles.row}>Total P/L: <Text style={[styles.value, {color: summary.totalPL >= 0 ? colors.success : colors.danger}]}>${"" + summary.totalPL.toFixed(2)}</Text></Text>
+          <Text style={styles.row}>Cash: <Text style={styles.value}>${"" + summary.cash.toFixed(2)}</Text></Text>
+          <Text style={styles.row}>Crypto (mkt): <Text style={styles.value}>${"" + summary.cryptoMkt.toFixed(2)}</Text></Text>
+          <Text style={styles.row}>Locked: <Text style={styles.value}>${"" + summary.locked.toFixed(2)}</Text></Text>
+          <Text style={styles.summaryFooter}>=============================</Text>
+        </View>
+      )}
+
+      <View style={styles.actions}>
+        <TouchableOpacity onPress={onStart} disabled={status === 'running'} style={[styles.btn, status === 'running' && styles.btnDisabled]}>
+          <Text style={styles.btnText}>{status === 'running' ? 'Running' : 'Start'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onStop} disabled={status !== 'running'} style={[styles.btn, styles.stopBtn, status !== 'running' && styles.btnDisabled]}>
+          <Text style={styles.btnText}>Stop</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 12,
-    marginTop: 10,
-    borderColor: "#ddd",
-    borderWidth: 1,
+  card: { ...cardStyle, padding: spacing(2), marginBottom: spacing(2) },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  title: { color: colors.text, fontSize: typography.h2, fontWeight: '700' },
+  badges: { flexDirection: 'row', gap: spacing(1) },
+  badge: {
+    fontSize: typography.tiny, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999,
+    overflow: 'hidden', color: '#fff', fontWeight: '700',
   },
-  title: { fontWeight: "700", color: "#111" },
-  meta: { color: "#555", marginTop: 2 },
-  row: { flexDirection: "row", gap: 10, marginTop: 10 },
-  btn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: "#0b5fff0f",
-    borderWidth: 1, borderColor: "#0b5fff44",
-  },
-  btnPressed: { backgroundColor: "#0b5fff22" },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: "#0b5fff", fontWeight: "700" },
-  btnTextDisabled: { color: "#7a9cff" },
+  running: { backgroundColor: colors.success },
+  stopped: { backgroundColor: colors.danger },
+  idle: { backgroundColor: colors.warning },
+  summary: { marginTop: spacing(1.5), padding: spacing(1.5), backgroundColor: colors.surfaceAlt,
+    borderRadius: radii.lg, borderWidth: 1, borderColor: colors.border },
+  summaryHeader: { color: colors.textMuted, fontFamily: typography.fontMono },
+  summaryFooter: { color: colors.textMuted, fontFamily: typography.fontMono, marginTop: spacing(0.5) },
+  row: { color: colors.text, fontFamily: typography.fontMono, fontSize: 13 },
+  value: { color: colors.text, fontFamily: typography.fontMono },
+  actions: { flexDirection: 'row', gap: spacing(1), marginTop: spacing(1.5) },
+  btn: { backgroundColor: colors.primary, paddingVertical: spacing(1), paddingHorizontal: spacing(2), borderRadius: radii.lg },
+  stopBtn: { backgroundColor: colors.danger },
+  btnDisabled: { opacity: 0.6 },
+  btnText: { color: '#fff', fontWeight: '700' },
 });
