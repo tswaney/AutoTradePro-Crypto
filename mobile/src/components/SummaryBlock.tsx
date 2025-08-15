@@ -4,30 +4,29 @@ import { StyleSheet, Text, View } from 'react-native';
 
 export type Summary = {
   beginningPortfolioValue?: number;
-  duration?: string | number;
+  duration?: string;
   buys?: number;
   sells?: number;
   totalPL?: number;
   cash?: number;
   cryptoMkt?: number;
   locked?: number;
+  pl24h?: number;
 };
 
-type Props = { s?: Summary; showPlaceholder?: boolean };
-
-export default function SummaryBlock({ s, showPlaceholder }: Props) {
-  const fmt = (n?: number) => (typeof n === 'number' ? `$${n.toFixed(2)}` : (showPlaceholder ? '—' : ''));
-  const val = (v: any) => (v != null && v !== '' ? String(v) : (showPlaceholder ? '—' : ''));
-  const gain = typeof s?.totalPL === 'number' ? (s!.totalPL >= 0) : undefined;
-
+export default function SummaryBlock({ summary }: { summary?: Summary }) {
+  const s = summary;
+  const fmt = (n?: number) => (n == null ? '—' : `$${Number(n).toFixed(2)}`);
+  const gain = s?.totalPL == null ? undefined : s.totalPL >= 0;
   return (
-    <View style={styles.summaryBox}>
-      <Text style={styles.summaryTitle}>TOTAL PORTFOLIO SUMMARY</Text>
+    <View style={styles.box}>
+      <Text style={styles.h2}>Total Portfolio Summary</Text>
       <Row k="Beginning Portfolio Value" v={fmt(s?.beginningPortfolioValue)} />
-      <Row k="Duration" v={val(s?.duration)} />
-      <Row k="Buys" v={val(s?.buys ?? 0)} />
-      <Row k="Sells" v={val(s?.sells ?? 0)} />
+      <Row k="Duration" v={s?.duration || '—'} />
+      <Row k="Buys" v={s?.buys?.toString() ?? '—'} />
+      <Row k="Sells" v={s?.sells?.toString() ?? '—'} />
       <Row k="Total P/L" v={fmt(s?.totalPL)} vStyle={gain===undefined?null:(gain?styles.good:styles.bad)} />
+      <Row k="24h Total P/L" v={fmt(s?.pl24h)} />
       <Row k="Cash" v={fmt(s?.cash)} />
       <Row k="Crypto (mkt)" v={fmt(s?.cryptoMkt)} />
       <Row k="Locked" v={fmt(s?.locked)} />
@@ -35,21 +34,21 @@ export default function SummaryBlock({ s, showPlaceholder }: Props) {
   );
 }
 
-function Row({ k, v, vStyle }:{ k:string; v:string; vStyle?:any }) {
+function Row({ k, v, vStyle }: { k: string; v: string; vStyle?: any }) {
   return (
     <View style={styles.row}>
-      <Text style={styles.k}>{k}:</Text>
+      <Text style={styles.k}>{k}</Text>
       <Text style={[styles.v, vStyle]}>{v}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  summaryBox: { marginTop: 10, backgroundColor: '#0B1117', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#2A3340' },
-  summaryTitle: { color: '#97A3B6', fontWeight: '700', marginBottom: 6 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
+  box: { borderWidth: 1, borderColor: '#2A3340', borderRadius: 12, padding: 12, backgroundColor: '#0B1117', marginTop: 12 },
+  h2: { color: '#E6EDF3', fontWeight: '700', marginBottom: 8 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   k: { color: '#97A3B6' },
   v: { color: '#E6EDF3', fontWeight: '600' },
-  good: { color: '#19C37D' },
-  bad: { color: '#F44336' },
+  good: { color: '#27C46A' },
+  bad: { color: '#FF5C5C' },
 });

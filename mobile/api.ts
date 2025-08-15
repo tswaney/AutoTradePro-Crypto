@@ -1,29 +1,46 @@
-// /mobile/api.ts  (kept as in prior patch; included for completeness)
-const BASE = process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:4000';
-type Json = any;
-async function http<T = Json>(path: string, init?: RequestInit): Promise<T> {
-  const url = path.startsWith('http') ? path : BASE + (path.startsWith('/') ? path : `/${path}`);
-  const res = await fetch(url, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
-    ...init,
-  });
-  const text = await res.text();
+// /mobile/api.ts
+const BASE_URL = (process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:4000').replace(/\/$/, '');
+
+async function tryFetch(path: string, init?: RequestInit) {
+  const url = `${BASE_URL}${path}`;
+  const res = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) } });
+  if (!res.ok) throw new Error(await res.text());
   const ct = res.headers.get('content-type') || '';
-  const isJson = ct.includes('application/json');
-  const isHtml = ct.includes('text/html');
-  const data = isJson ? (text ? JSON.parse(text) : {}) : text;
-  if (!res.ok) {
-    const msg = isHtml ? res.statusText || 'Request failed' : (typeof data === 'string' ? data : (data?.message || res.statusText));
-    throw new Error(msg);
-  }
-  // @ts-ignore
-  return data;
+  return ct.includes('application/json') ? res.json() : res.text();
 }
-export const apiGet = <T = Json>(path: string) => http<T>(path, { method: 'GET' });
-export const apiPost = <T = Json>(path: string, body?: any) => http<T>(path, { method: 'POST', body: body == null ? undefined : JSON.stringify(body) });
-export const apiDelete = <T = Json>(path: string) => http<T>(path, { method: 'DELETE' });
-export async function logout() {
-  const tryReq = async (fn: () => Promise<any>) => { try { await fn(); return true; } catch { return false; } };
-  await tryReq(() => apiPost('/auth/logout')) || await tryReq(() => apiPost('/auth/signout')) || await tryReq(() => apiGet('/auth/signout'));
+
+function toggleApiPrefix(p: string) {
+  if (p.startsWith('/api/')) return p.replace('/api/', '/');
+  if (p === '/api') return '/';
+  return p.startsWith('/') ? `/api${p}` : `/api/${p}`;
+}
+
+export async function apiGet(path: string) {
+  try { return await tryFetch(path, { method: 'GET' }); }
+  catch { return await tryFetch(toggleApiPrefix(path), { method: 'GET' }); }
+}
+
+export async function apiPost(path: string, body?: any) {
+  const init: RequestInit = { method: 'POST', body: body ? JSON.stringify(body) : undefined };
+  try { return await tryFetch(path, init); }
+  catch { return await tryFetch(toggleApiPrefix(path), init); }
+}
+
+export async function apiDelete(path: string) {
+  const init: RequestInit = { method: 'DELETE' };
+  try { return await tryFetch(path, init); }
+  catch { return await tryFetch(toggleApiPrefix(path), init); }
+}
+
+/** Logs helper: returns { lines: string[], cursor?: string } normalized. */
+export async function apiGetLogs(path: string) {
+  const res: any = await apiGet(path);
+  if (typeof res === 'string') {
+    const lines = (res || '').split(/\r?\n/).filter(Boolean);
+    return { lines, cursor: undefined };
+  }
+  if (Array.isArray(res)) return { lines: res.map(String), cursor: undefined };
+  if (res && Array.isArray(res.lines)) return { lines: res.lines.map(String), cursor: res.cursor };
+  if (res && typeof res.text === 'string') return { lines: res.text.split(/\r?\n/).filter(Boolean), cursor: undefined };
+  return { lines: [], cursor: undefined };
 }

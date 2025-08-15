@@ -23,5 +23,9 @@ export default function LogViewer({ lines, follow }: Props) {
 
 const styles = StyleSheet.create({
   box: { height: 260, borderRadius: 12, borderWidth: 1, borderColor: '#2A3340', backgroundColor: '#0B1117', padding: 8 },
-  line: { color: '#D1D7E0', fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string, fontSize: 12, lineHeight: 16 },
+  line: {
+    color: '#D1D7E0',
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string,
+    fontSize: 12, lineHeight: 16
+  },
 });

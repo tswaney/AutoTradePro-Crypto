@@ -1,119 +1,161 @@
-// control-plane/src/index.js (ESM)
-// Your package.json has `"type":"module"`, so we use ESM imports here.
+// control-plane/src/index.js – Complete local demo: multi-bot + logs + stats + 24h P/L
 import express from 'express';
 import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import strategiesRouter from './routes/strategies.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
-
-const app  = express();
+const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
+const ROLLOVER_HOUR = Number(process.env.PL_DAY_START_HOUR ?? '9');
 
 app.use(cors());
 app.use(express.json());
 
-// --- In-memory demo bot state + logs ----------------------------------------
-const demoBotId = 'local-test';
-let botStatus   = 'stopped'; // 'running' | 'stopped'
-let mode        = 'demo';
-let strategy    = 'moderateRetainMode_v4.js';
-let symbols     = ['BTCUSD', 'SOLUSD'];
+const strategies = [
+  { id: 'moderate-retain-v1', name: 'Moderate Retain Mode', version: 'v1.0', description: 'Grid strategy with moderate profit locking and cash reserve.' },
+  { id: 'momentum-rider-v2', name: 'Momentum Rider', version: 'v2.0', description: 'Trend-following with momentum filters.' },
+  { id: 'risk-adjusted-rebalancer', name: 'Risk-Adjusted Rebalancer', version: 'v1.0', description: 'Periodic rebalancing optimized for risk-adjusted returns.' },
+  { id: 'dynamic-core', name: 'Dynamic Core', version: 'v1.0', description: 'Baseline + rolling rebalance.' }
+];
 
-// simple log ring buffer
-const LOG_MAX = 1000;
-let logs = [];
-let cursorCounter = 0;
-const now = () => new Date().toISOString();
+const bots = {};
 
-function pushLog(line) {
-  const item = `${now()}  ${line}`;
-  logs.push(item);
-  if (logs.length > LOG_MAX) logs.splice(0, logs.length - LOG_MAX);
-  cursorCounter += 1;
+const nowIso = () => new Date().toISOString();
+function pushLog(bot, line) {
+  const entry = `${nowIso()}  ${line}`;
+  bot.logs.push(entry);
+  if (bot.logs.length > 5000) bot.logs.splice(0, bot.logs.length - 5000);
+  bot.cursor += 1;
 }
 
-// heartbeat to generate logs when running
-setInterval(() => {
-  if (botStatus === 'running') {
-    pushLog(`[${demoBotId}] heartbeat running…`);
-  }
-}, 2000);
+function ensureHeartbeat(bot) {
+  if (bot.heartbeat) return;
+  bot.heartbeat = setInterval(() => {
+    if (bot.status !== 'running') return;
+    bot.buys += Math.random() < 0.05 ? 1 : 0;
+    bot.sells += Math.random() < 0.05 ? 1 : 0;
+    const delta = (Math.random() - 0.5) * 5;
+    bot.totalPL += delta;
+    bot.cash += delta * 0.5;
+    bot.cryptoMkt += delta * 0.5;
+    pushLog(bot, `[${bot.id}] heartbeat • P/L $${delta.toFixed(2)}`);
+  }, 2000);
+}
 
-// --- Bots API ----------------------------------------------------------------
-app.get('/bots', (req, res) => {
-  const list = [{
-    id: demoBotId,
-    name: demoBotId,
-    status: botStatus,
-    mode,
-    strategy,
-    symbols
-  }];
-  console.log('[BOT] list');
-  res.json(list);
+function stopHeartbeat(bot) {
+  if (bot.heartbeat) { clearInterval(bot.heartbeat); bot.heartbeat = undefined; }
+}
+
+function computePl24h(bot) {
+  const now = new Date();
+  const anchor = new Date(now);
+  anchor.setHours(ROLLOVER_HOUR, 0, 0, 0);
+  if (anchor > now) anchor.setDate(anchor.getDate() - 1);
+  let sum = 0;
+  for (const line of bot.logs) {
+    const m = /^([^\s]+)\s+(.+)$/.exec(line);
+    if (!m) continue;
+    const when = new Date(m[1]);
+    if (!isFinite(when.getTime()) || when < anchor) continue;
+    const mm = /P\/L\s*\$([0-9.,-]+)/i.exec(line);
+    if (mm) {
+      const val = parseFloat(mm[1].replace(/,/g, ''));
+      if (!Number.isNaN(val)) sum += val;
+    }
+  }
+  return { pl24h: sum, windowStart: anchor.toISOString() };
+}
+
+const r = express.Router();
+
+r.get('/strategies', (req, res) => res.json(strategies));
+
+r.get('/bots', (req, res) => {
+  res.json(Object.values(bots).map(b => ({
+    id: b.id, name: b.name, status: b.status, strategyId: b.strategyId, symbols: b.symbols
+  })));
 });
 
-app.get('/bots/:id', (req, res) => {
-  if (req.params.id !== demoBotId) return res.status(404).json({ error: 'not found' });
+r.post('/bots', (req, res) => {
+  const { name, strategyId, symbols } = req.body || {};
+  if (!name || !strategyId) return res.status(400).json({ error: 'name and strategyId required' });
+  const id = name.toLowerCase().replace(/\s+/g, '-');
+  if (bots[id]) return res.status(409).json({ error: 'bot id already exists' });
+  bots[id] = { id, name, status: 'stopped', strategyId, symbols: Array.isArray(symbols)?symbols:[], logs: [], cursor: 0, buys: 0, sells: 0, cash: 10000, cryptoMkt: 0, locked: 0, totalPL: 0 };
+  pushLog(bots[id], `[${id}] created: strategy=${strategyId}, symbols=${bots[id].symbols.join(',')}`);
+  res.json({ id });
+});
+
+r.get('/bots/:id', (req, res) => {
+  const b = bots[req.params.id]; if (!b) return res.status(404).json({ error: 'not_found' });
+  res.json({ id: b.id, name: b.name, status: b.status, strategyId: b.strategyId, symbols: b.symbols });
+});
+
+r.delete('/bots/:id', (req, res) => {
+  const b = bots[req.params.id]; if (!b) return res.status(404).json({ error: 'not_found' });
+  stopHeartbeat(b);
+  delete bots[req.params.id];
+  res.json({ ok: true });
+});
+
+r.get('/bots/:id/status', (req, res) => {
+  const b = bots[req.params.id]; if (!b) return res.status(404).json({ error: 'not_found' });
+  res.json({ status: b.status });
+});
+
+r.post('/bots/:id/start', (req, res) => {
+  const b = bots[req.params.id]; if (!b) return res.status(404).json({ error: 'not_found' });
+  if (b.status !== 'running') {
+    b.status = 'running';
+    pushLog(b, `[${b.id}] started`);
+    ensureHeartbeat(b);
+  }
+  res.json({ ok: true, status: b.status });
+});
+
+r.post('/bots/:id/stop', (req, res) => {
+  const b = bots[req.params.id]; if (!b) return res.status(404).json({ error: 'not_found' });
+  if (b.status !== 'stopped') {
+    b.status = 'stopped';
+    pushLog(b, `[${b.id}] stopped`);
+    stopHeartbeat(b);
+  }
+  res.json({ ok: true, status: b.status });
+});
+
+r.get('/bots/:id/logs', (req, res) => {
+  const b = bots[req.params.id]; if (!b) return res.status(404).json({ error: 'not_found' });
+  const since = Number(req.query.cursor || 0);
+  const lines = since ? b.logs.slice(Math.max(0, since)) : b.logs.slice(-200);
+  res.json({ lines, cursor: String(b.cursor) });
+});
+
+r.get('/bots/:id/stats', (req, res) => {
+  const b = bots[req.params.id]; if (!b) return res.status(404).json({ error: 'not_found' });
+  const p = computePl24h(b);
   res.json({
-    id: demoBotId,
-    name: demoBotId,
-    status: botStatus,
-    mode,
-    strategy,
-    symbols
+    id: b.id, status: b.status,
+    beginningPortfolioValue: 10000,
+    duration: '—',
+    buys: b.buys, sells: b.sells,
+    totalPL: b.totalPL,
+    cash: b.cash, cryptoMkt: b.cryptoMkt, locked: b.locked,
+    ...p
   });
 });
 
-app.post('/bots/:id/start', (req, res) => {
-  console.log('[BOT] start', req.params.id, req.body || {});
-  if (req.params.id !== demoBotId) return res.status(404).json({ error: 'not found' });
-  if (botStatus !== 'running') {
-    botStatus = 'running';
-    pushLog(`[${demoBotId}] started`);
-  }
-  res.json({ ok: true, status: botStatus });
-});
+app.use('/', r);
+app.use('/api', r);
 
-app.post('/bots/:id/stop', (req, res) => {
-  console.log('[BOT] stop', req.params.id, req.body || {});
-  if (req.params.id !== demoBotId) return res.status(404).json({ error: 'not found' });
-  if (botStatus !== 'stopped') {
-    botStatus = 'stopped';
-    pushLog(`[${demoBotId}] stopped`);
-  }
-  res.json({ ok: true, status: botStatus });
-});
+// --- Auth endpoints (dev stub) ---
+function authOk(req, res) { res.json({ ok: true }); }
+app.post('/auth/login', authOk);
+app.post('/auth/signin', authOk);
+app.post('/auth/logout', authOk);
+app.post('/auth/signout', authOk);
+app.get('/auth/signout', authOk);
 
-app.post('/bots/:id/restart', (req, res) => {
-  console.log('[BOT] restart', req.params.id, req.body || {});
-  if (req.params.id !== demoBotId) return res.status(404).json({ error: 'not found' });
-  botStatus = 'running';
-  pushLog(`[${demoBotId}] restarted`);
-  res.json({ ok: true, status: botStatus });
-});
-
-// Logs polling endpoint: GET /bots/:id/logs?cursor=<n>
-// Returns { lines: string[], cursor: string }
-app.get('/bots/:id/logs', (req, res) => {
-  if (req.params.id !== demoBotId) return res.status(404).json({ error: 'not found' });
-  const since = Number(req.query.cursor || 0);
-  const lines = logs.slice(-200); // return last 200 lines at most
-  res.json({ lines, cursor: String(cursorCounter) });
-});
-
-// --- Auth stubs so Sign out never 404s --------------------------------------
-app.post('/auth/logout', (req, res) => res.json({ ok: true }));
-app.post('/auth/signout', (req, res) => res.json({ ok: true }));
-app.get('/auth/signout', (req, res) => res.json({ ok: true }));
-
-// --- Strategies API ----------------------------------------------------------
-app.use('/api/strategies', strategiesRouter);
-
-// --- Start -------------------------------------------------------------------
 app.listen(PORT, () => {
   console.log(`Control-plane API listening on :${PORT}`);
+  const id = 'sample-bot';
+  bots[id] = { id, name: 'Sample Bot', status: 'stopped', strategyId: strategies[0].id, symbols: ['BTCUSD','SOLUSD'], logs: [], cursor: 0, buys: 0, sells: 0, cash: 10000, cryptoMkt: 0, locked: 0, totalPL: 0 };
+  pushLog(bots[id], `[${id}] created (seed)`);
 });

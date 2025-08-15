@@ -1,44 +1,25 @@
-// /mobile/App.tsx
+// /mobile/App.tsx – WITH New Bot route + SnackProvider wrapper
 import { Provider } from 'react-redux';
 import { store } from './src/store';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { NavigationContainer, DefaultTheme, Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import {
-  ActivityIndicator,
-  DeviceEventEmitter,
-  FlatList,
-  RefreshControl,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import * as SecureStore from 'expo-secure-store';
+import { ActivityIndicator, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-
-import { apiGet, apiPost, logout as apiLogout } from './api';
-import { SnackProvider, useSnack } from './src/components/Snack';
-
-import { colors } from './src/theme/designSystem';
 import BotCard from './src/components/BotCard';
+import SummaryBlock, { Summary } from './src/components/SummaryBlock';
 import BotDetailScreen from './src/screens/BotDetailScreen';
-import HeaderActions from './src/components/HeaderActions';
-import type { Summary } from './src/components/SummaryBlock';
+import NewBotScreen from './src/screens/NewBotScreen';
+import Auth from './src/screens/Auth';
+import { apiGet, apiPost } from './api';
+import { SnackProvider } from './src/components/Snack';
 
-type BotStatus = 'running' | 'stopped' | 'starting' | 'stopping' | 'error';
-type Bot = {
-  id: string; name: string; status: BotStatus;
-  mode?: string; strategy?: string; strategyFile?: string;
-  symbols?: string[]; pairs?: string[];
-};
-
-type RootStackParamList = { Auth: undefined; Home: undefined; BotDetail: { botId: string; botName?: string } };
+type RootStackParamList = { Auth: undefined; Home: undefined; NewBot: undefined; BotDetail: { botId: string; botName?: string } };
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const SIGNED_KEY = 'autotradepro.signedIn';
 
-const navTheme: Theme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: colors.background, card: '#11161C', text: '#E6EDF3', border: '#2A3340', primary: '#7AA5FF', notification: '#7AA5FF' } };
+type Bot = { id: string; name: string; status?: string; strategyId?: string; symbols?: string[] };
+
+const navTheme: Theme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, card: '#0B1117', background: '#0B1117', text: '#E6EDF3', border: '#2A3340', primary: '#7AA5FF', notification: '#7AA5FF' } };
 
 export default function App() {
   return (
@@ -47,9 +28,12 @@ export default function App() {
         <SnackProvider>
           <NavigationContainer theme={navTheme}>
             <Stack.Navigator screenOptions={{ headerTitleAlign: 'center' }}>
-              <Stack.Screen name="Auth" component={AuthGate} options={{ headerShown: false }} />
+              <Stack.Screen name="Auth" options={{ headerShown: false }}>
+              {props => <Auth onSignedIn={() => props.navigation.replace('Home')} />}
+            </Stack.Screen>
               <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Bots' }} />
-              <Stack.Screen name="BotDetail" component={BotDetailScreen} options={{ title: 'Bot Detail' }} />
+              <Stack.Screen name="NewBot" component={NewBotScreen} options={{ title: 'New Bot' }} />
+              <Stack.Screen name="BotDetail" component={BotDetailScreen} options={{ title: 'Bot' }} />
             </Stack.Navigator>
           </NavigationContainer>
         </SnackProvider>
@@ -58,34 +42,22 @@ export default function App() {
   );
 }
 
-function AuthGate({ navigation }: any) {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    (async () => {
-      try {
-        const signed = await SecureStore.getItemAsync(SIGNED_KEY);
-        if (signed === '1') { navigation.reset({ index: 0, routes: [{ name: 'Home' }] }); return; }
-      } finally { setReady(true); }
-    })();
-  }, [navigation]);
-
-  if (!ready) return (<SafeAreaView style={[styles.center, { backgroundColor: colors.background }]}><ActivityIndicator /></SafeAreaView>);
-
-  const AuthScreen = require('./src/screens/Auth').default;
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <AuthScreen onSignedIn={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })} />
-    </SafeAreaView>
-  );
-}
-
 function HomeScreen({ navigation }: any) {
-  const snack = useSnack();
-  const [bots, setBots] = useState<Bot[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [inFlight, setInFlight] = useState<Record<string, boolean>>({});
-  const [summaries, setSummaries] = useState<Record<string, Summary | undefined>>({});
+  const [bots, setBots] = React.useState<Bot[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [inFlight, setInFlight] = React.useState<Record<string, boolean>>({});
+  const [summaries, setSummaries] = React.useState<Record<string, Summary | undefined>>({});
+
+  React.useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => navigation.navigate('NewBot')}>
+          <Text style={{ color: '#7AA5FF', fontWeight: '600' }}>New Bot</Text>
+        </TouchableOpacity>
+      )
+    });
+  }, [navigation]);
 
   const mapSummary = (s:any): Summary => ({
     beginningPortfolioValue: s.beginningPortfolioValue ?? s.begin ?? s.startValue ?? s.startingBalance,
@@ -96,6 +68,7 @@ function HomeScreen({ navigation }: any) {
     cash: s.cash ?? s.balance,
     cryptoMkt: s.cryptoMkt ?? s.crypto ?? s.marketValue,
     locked: s.locked ?? s.margin ?? s.held,
+    pl24h: s.pl24h ?? s['24h'] ?? s.last24h ?? s.pnl24h ?? s.pl24hTotal,
   });
 
   const trySummary = async (id: string) => {
@@ -111,83 +84,41 @@ function HomeScreen({ navigation }: any) {
     setSummaries(Object.fromEntries(entries));
   };
 
-  const fetchBots = async () => {
+  const refresh = async () => {
+    setRefreshing(true);
     try {
-      setLoading(true);
-      const res = await apiGet('/bots');
-      const list = Array.isArray(res) ? (res as Bot[]) : [];
-      setBots(list);
-      await refreshSummaries(list);
-    } catch (e: any) {
-      snack.show?.(e?.message || 'Failed to load bots');
-    } finally {
-      setLoading(false);
-    }
+      const list = await apiGet('/bots');
+      setBots(Array.isArray(list) ? list : []);
+      await refreshSummaries(Array.isArray(list) ? list : []);
+    } finally { setRefreshing(false); setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchBots();
-    const sub = DeviceEventEmitter.addListener('bots:refresh', fetchBots);
-    const iv = setInterval(() => fetchBots().catch(()=>{}), 5000);
-    return () => { sub.remove(); clearInterval(iv); };
-  }, []);
+  React.useEffect(() => { refresh(); }, []);
 
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <HeaderActions
-          onRefresh={fetchBots}
-          onSignOut={async () => {
-            try { await apiLogout(); } catch {}
-            await SecureStore.deleteItemAsync(SIGNED_KEY);
-            navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
-          }}
-        />
-      ),
-      headerLeft: () => null,
-      headerTitle: 'Bots',
-    });
-  }, [navigation]);
-
-  const onRefresh = async () => { setRefreshing(true); await fetchBots(); setRefreshing(false); };
-  const setLock = (id: string, val: boolean) => setInFlight((m) => ({ ...m, [id]: val }));
-
-  // strict: no auto-start anywhere; ONLY call /start inside this handler
-  const startBot = async (b: Bot) => {
-    if (b.status === 'running' || b.status === 'starting') { snack.show?.('Already running'); return; }
-    if (inFlight[b.id]) return;
-    setLock(b.id, true);
-    try { await apiPost(`/bots/${b.id}/start`); snack.show?.('Start requested'); await fetchBots(); }
-    catch (e:any) { snack.show?.(e?.message || 'Start failed'); }
-    finally { setLock(b.id, false); }
+  const onStart = async (id: string) => {
+    setInFlight(s => ({ ...s, [id]: true }));
+    try { await apiPost(`/bots/${id}/start`); await refresh(); }
+    finally { setInFlight(s => { const n = { ...s }; delete n[id]; return n; }); }
   };
-  const stopBot = async (b: Bot) => {
-    if (b.status !== 'running') { snack.show?.('Already stopped'); return; }
-    if (inFlight[b.id]) return;
-    setLock(b.id, true);
-    try { await apiPost(`/bots/${b.id}/stop`); snack.show?.('Stop requested'); await fetchBots(); }
-    catch (e:any) { snack.show?.(e?.message || 'Stop failed'); }
-    finally { setLock(b.id, false); }
+  const onStop = async (id: string) => {
+    setInFlight(s => ({ ...s, [id]: true }));
+    try { await apiPost(`/bots/${id}/stop`); await refresh(); }
+    finally { setInFlight(s => { const n = { ...s }; delete n[id]; return n; }); }
   };
 
   const renderItem = ({ item }: { item: Bot }) => {
-    const id = item.id || 'local-test';
-    const name = item.name || id;
-    const strat = item.strategy || item.strategyFile || 'strategy';
-    const syms = (item.symbols && item.symbols.length ? item.symbols : item.pairs) || [];
-    const subtitle = syms.length ? `${strat} • ${syms.join(', ')}` : `${strat}`;
-
+    const summary = summaries[item.id];
+    const status = (item.status || 'stopped') as 'running'|'stopped'|'idle';
     return (
-      <View style={{ marginBottom: 12 }}>
+      <View style={{ paddingHorizontal: 12 }}>
         <BotCard
-          id={id}
-          name={name}
-          status={item.status === 'running' ? 'running' : item.status === 'stopped' ? 'stopped' : 'idle'}
-          subtitle={subtitle}
-          summary={summaries[id]}
-          onStart={() => startBot(item)}
-          onStop={() => stopBot(item)}
-          onOpen={() => navigation.navigate('BotDetail', { botId: id, botName: name })}
+          id={item.id}
+          name={item.name || item.id}
+          status={status}
+          summary={summary}
+          onStart={() => onStart(item.id)}
+          onStop={() => onStop(item.id)}
+          onOpen={() => navigation.navigate('BotDetail', { botId: item.id, botName: item.name })}
         />
       </View>
     );
@@ -200,10 +131,10 @@ function HomeScreen({ navigation }: any) {
       ) : (
         <FlatList
           data={bots}
-          keyExtractor={(b) => b.id || 'local-test'}
+          keyExtractor={(b) => b.id}
           renderItem={renderItem}
-          contentContainerStyle={{ padding: 12 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={{ paddingVertical: 12 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
         />
       )}
     </SafeAreaView>
