@@ -1,0 +1,58 @@
+control-plane
+├── .env
+├── package-lock.json
+├── package.json
+├── README.md
+└── src
+    ├── .env
+    ├── auth.js
+    ├── index.js
+    ├── localRunner.js
+    ├── localRunner.ts
+    └── routes
+        ├── bots.js
+        └── strategies.js
+mobile
+├── api.ts
+├── app.json
+├── App.tsx
+├── Archive
+│   ├── api.ts
+│   ├── App.js
+│   ├── BotHub.jsx
+│   ├── Logs.jsx
+│   └── PortfolioSummary.jsx
+├── index.js
+├── package-lock.json
+├── package.json
+├── README.md
+├── src
+│   ├── api
+│   │   └── client.ts
+│   ├── auth
+│   │   └── b2c.ts
+│   ├── components
+│   │   ├── _archive
+│   │   ├── BotCard.tsx
+│   │   ├── LogViewer.tsx
+│   │   ├── Snack.tsx
+│   │   └── VirtualLogList.tsx
+│   ├── config.ts
+│   ├── hooks
+│   │   └── useAsyncAction.ts
+│   ├── screens
+│   │   ├── _archive
+│   │   │   └── BotDetail.tsx
+│   │   ├── Auth.tsx
+│   │   ├── BotDetailScreen.tsx
+│   │   └── SignInScreen.tsx
+│   ├── store
+│   │   ├── botsSlice.ts
+│   │   └── index.ts
+│   ├── strategyOptions.json
+│   ├── theme
+│   │   └── designSystem.ts
+│   └── types.ts
+└── tsconfig.json
+
+15 directories, 41 files
