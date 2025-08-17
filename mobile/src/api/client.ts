@@ -1,43 +1,39 @@
-// mobile/src/api/client.ts
-const BASE_URL = (process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:4000').replace(/\/$/, '');
+// /mobile/src/api/client.ts
+// Minimal fetch client with JSON/text handling and DELETE support.
 
-async function tryHttp(path: string, init?: RequestInit) {
-  const res = await fetch(`${BASE_URL}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) } });
-  if (!res.ok) throw new Error(await res.text());
-  const ct = res.headers.get('content-type') || '';
-  return ct.includes('application/json') ? res.json() : res.text();
-}
+const BASE_URL =
+  (typeof process !== 'undefined' && (process as any).env?.EXPO_PUBLIC_API_BASE_URL) ||
+  (typeof process !== 'undefined' && (process as any).env?.API_BASE_URL) ||
+  'http://localhost:4000';
 
-function toggleApiPrefix(p: string) {
-  if (p.startsWith('/api/')) return p.replace('/api/', '/');
-  if (p === '/api') return '/';
-  return p.startsWith('/') ? `/api${p}` : `/api/${p}`;
-}
+type Method = 'GET'|'POST'|'DELETE';
 
-async function http(path: string, init?: RequestInit) {
-  try { return await tryHttp(path, init); }
-  catch { return await tryHttp(toggleApiPrefix(path), init); }
-}
+async function request<T = any>(method: Method, path: string, body?: any): Promise<T> {
+  const url = path.startsWith('http') ? path : `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  let payload: any = undefined;
 
-export const api = {
-  status: (botId: string) => http(`/bots/${botId}/status`),
-  start:  (botId: string) => http(`/bots/${botId}/start`, { method: 'POST' }),
-  stop:   (botId: string) => http(`/bots/${botId}/stop`,  { method: 'POST' }),
-  summary:(botId: string) => http(`/bots/${botId}/summary`),
-  logs:   async function* (botId: string) {
-    let cursor: string | undefined = undefined;
-    while (true) {
-      const p = cursor ? `/bots/${botId}/logs?cursor=${encodeURIComponent(cursor)}` : `/bots/${botId}/logs`;
-      const chunk: any = await http(p);
-      if (typeof chunk === 'string') {
-        yield chunk;
-      } else if (chunk && Array.isArray(chunk.lines)) {
-        cursor = chunk.cursor ?? cursor;
-        yield (chunk.lines || []).join('\n');
-      } else if (chunk && typeof chunk.text === 'string') {
-        yield chunk.text;
-      }
-      await new Promise(r => setTimeout(r, 1000));
-    }
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    payload = JSON.stringify(body);
   }
-};
+
+  const res = await fetch(url, { method, headers, body: payload });
+  const ct = res.headers.get('content-type') || '';
+  const isJson = ct.includes('application/json');
+
+  if (!res.ok) {
+    const errText = isJson ? JSON.stringify(await res.json()).slice(0, 500) : (await res.text()).slice(0, 500);
+    throw new Error(errText || `HTTP ${res.status}`);
+  }
+
+  if (isJson) return (await res.json()) as T;
+  return (await res.text()) as unknown as T;
+}
+
+export const apiGet    = <T=any>(path: string) => request<T>('GET', path);
+export const apiPost   = <T=any>(path: string, body?: any) => request<T>('POST', path, body);
+export const apiDelete = <T=any>(path: string) => request<T>('DELETE', path);
+
+// convenience
+export const logout = () => apiPost('/auth/logout', {});

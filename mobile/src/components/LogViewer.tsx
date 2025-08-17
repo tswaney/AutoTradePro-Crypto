@@ -1,31 +1,49 @@
-// /mobile/src/components/LogViewer.tsx
 import React, { useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View, Platform } from 'react-native';
+import { FlatList, StyleSheet, Text, View, Platform } from 'react-native';
 
-type Props = { lines: string[]; follow: boolean };
+export default function LogViewer({
+  lines,
+  follow = true,
+  maxHeight = 420,
+}: { lines: string[]; follow?: boolean; maxHeight?: number }) {
+  const listRef = useRef<FlatList<string>>(null);
 
-export default function LogViewer({ lines, follow }: Props) {
-  const ref = useRef<ScrollView>(null);
   useEffect(() => {
-    if (follow && ref.current) setTimeout(() => ref.current?.scrollToEnd({ animated: false }), 0);
-  }, [lines.length, follow]);
+    if (follow && listRef.current) {
+      try { listRef.current.scrollToEnd({ animated: false }); } catch {}
+    }
+  }, [lines, follow]);
 
   return (
-    <View style={styles.box}>
-      <ScrollView ref={ref}>
-        {(lines.length ? lines : ['— no logs yet —']).map((ln, i) => (
-          <Text key={i} style={styles.line}>{ln}</Text>
-        ))}
-      </ScrollView>
+    <View style={[styles.shell, { maxHeight }]}>
+      <FlatList
+        ref={listRef}
+        data={lines}
+        keyExtractor={(_, i) => String(i)}
+        renderItem={({ item }) => <Text style={styles.line} selectable>{item}</Text>}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+        indicatorStyle="white"
+        initialNumToRender={50}
+        windowSize={15}
+        getItemLayout={(_, index) => ({ length: LINE_H, offset: LINE_H * index, index })}
+        contentContainerStyle={{ paddingVertical: 6, paddingHorizontal: 10 }}
+      />
     </View>
   );
 }
 
+const LINE_H = 18;
+
 const styles = StyleSheet.create({
-  box: { height: 260, borderRadius: 12, borderWidth: 1, borderColor: '#2A3340', backgroundColor: '#0B1117', padding: 8 },
+  shell: {
+    borderWidth: 1, borderColor: '#2A3340', borderRadius: 12, overflow: 'hidden',
+    backgroundColor: '#0A0F14',
+  },
   line: {
-    color: '#D1D7E0',
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string,
-    fontSize: 12, lineHeight: 16
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    lineHeight: LINE_H,
+    color: '#DAE0E9',
   },
 });
