@@ -1,11 +1,4 @@
-// control-plane/src/index.js (v3.6)
-// - Spawns testPrice_Dev.js from its own directory (cwd fix)
-// - Auto-seeds a holdings file for each new bot
-// - Loads backend .env alongside control-plane .env
-// - Robust log parsing for Beginning Portfolio Value, Cash/Crypto/Locked
-// - Derives initial Crypto (mkt) from Beginning - Cash - Locked when possible
-// - Exposes dynamic strategies & defaults
-
+// control-plane/src/index.js (v3.7)
 import express from "express";
 import cors from "cors";
 import { spawn } from "child_process";
@@ -16,7 +9,7 @@ import { createRequire } from "module";
 import { pathToFileURL } from "url";
 import { loadAllBotsFromDisk, saveBotMeta, ensureDir } from "./persistence.js";
 
-dotenv.config(); // control-plane/.env
+dotenv.config();
 const require = createRequire(import.meta.url);
 
 function loadEnvIfExists(p) {
@@ -33,22 +26,17 @@ const ROLLOVER_HOUR = Number(process.env.PL_DAY_START_HOUR ?? "9");
 
 const BOT_SCRIPT_PATH =
   process.env.BOT_SCRIPT_PATH ||
-  path.resolve(process.cwd(), "testPrice_dev.js");
+  path.resolve(process.cwd(), "testPrice_Dev.js");
 
 const STRATEGIES_DIR =
   process.env.STRATEGIES_DIR ||
   path.join(path.dirname(path.resolve(BOT_SCRIPT_PATH)), "strategies");
 
 const BACKEND_DIR = path.dirname(path.resolve(BOT_SCRIPT_PATH));
-
-// auto-merge backend/.env when STRATEGIES_DIR is under /backend/strategies
 loadEnvIfExists(path.join(path.dirname(path.resolve(STRATEGIES_DIR)), ".env"));
-
-// optional extra envs
 if (process.env.ENV_INCLUDE_FILES) {
-  for (const p of String(process.env.ENV_INCLUDE_FILES).split(",")) {
+  for (const p of String(process.env.ENV_INCLUDE_FILES).split(","))
     loadEnvIfExists(p.trim());
-  }
 }
 
 const BOT_DATA_ROOT =
@@ -58,32 +46,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --------------------- AUTH STUBS ---------------------
-app.post("/auth/login", (_req, res) => res.json({ ok: true }));
-app.post("/auth/signin", (_req, res) => res.json({ ok: true }));
-app.post("/auth/logout", (_req, res) => res.json({ ok: true }));
-app.post("/auth/signout", (_req, res) => res.json({ ok: true }));
-
-// ------------------- STRATEGIES -----------------------
+// ------------------- Strategy discovery -------------------
 function slug(s) {
   return String(s)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-");
 }
-
 function normalizeMeta(mod) {
   const x = (mod && (mod.default ?? mod)) || {};
-  const candidates = [x, x.meta, x.strategy, x.info, x.Strategy];
-  for (const c of candidates) {
+  for (const c of [x, x.meta, x.strategy, x.info, x.Strategy]) {
     if (!c) continue;
-    const name = c.name || c.strategyName || c.title;
-    const version = c.version || c.ver || c.v || c.strategyVersion;
-    const description = c.description || c.desc || "";
-    if (name && version) return { name, version: String(version), description };
+    const n = c.name || c.strategyName || c.title;
+    const v = c.version || c.ver || c.v || c.strategyVersion;
+    const d = c.description || c.desc || "";
+    if (n && v) return { name: n, version: String(v), description: d };
   }
   return null;
 }
-
 function parseMetaFromSource(src) {
   const head = String(src || "").slice(0, 2048);
   const n = /name\s*:\s*['"`]([^'"`]+)['"`]/.exec(head);
@@ -97,26 +76,23 @@ function parseMetaFromSource(src) {
     };
   return null;
 }
-
 async function loadStrategyMeta(fileAbs) {
   try {
-    const mod = require(fileAbs);
-    const m = normalizeMeta(mod);
+    const m = normalizeMeta(require(fileAbs));
     if (m) return m;
   } catch {}
   try {
-    const mod = await import(pathToFileURL(fileAbs).href + `?t=${Date.now()}`);
-    const m = normalizeMeta(mod);
+    const m = normalizeMeta(
+      await import(pathToFileURL(fileAbs).href + `?t=${Date.now()}`)
+    );
     if (m) return m;
   } catch {}
   try {
-    const src = fs.readFileSync(fileAbs, "utf8");
-    const m = parseMetaFromSource(src);
+    const m = parseMetaFromSource(fs.readFileSync(fileAbs, "utf8"));
     if (m) return m;
   } catch {}
   return null;
 }
-
 async function scanStrategies() {
   const out = [];
   try {
@@ -150,14 +126,13 @@ async function scanStrategies() {
   }
   return out;
 }
-
 app.get("/strategies", async (_req, res) => res.json(await scanStrategies()));
-async function resolveChoiceIndexById(strategyId) {
+async function resolveChoiceIndexById(id) {
   const list = await scanStrategies();
-  const hit = list.find((s) => s.id === strategyId);
-  return hit ? hit.choiceIndex : undefined;
+  return list.find((s) => s.id === id)?.choiceIndex;
 }
 
+// ------------------- Config defaults (from .env) -------------------
 const FAMILIES = {
   "dynamic-regime-switching-1-0": [
     /^DYNAMIC_/,
@@ -233,14 +208,12 @@ const FAMILIES = {
     /^AUTO_TUNE_/,
   ],
 };
-
 function getStrategyDefaults(strategyId) {
   const out = {};
   const upper = String(strategyId)
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "_");
   const stratPrefix = `STRAT_${upper}_`;
-
   for (const [k, v] of Object.entries(process.env)) {
     if (k.startsWith("BOTCFG_")) out[k.substring("BOTCFG_".length)] = v;
     else if (k.startsWith(stratPrefix))
@@ -254,17 +227,16 @@ function getStrategyDefaults(strategyId) {
     }
   }
   if (Object.keys(out).length === 0) {
-    const GENERIC = [
+    const GEN = [
       /^(SIMPLE_|GRID_|ATR_|PROFIT_LOCK_|SUPER_|ULTIMATE_|RISK_|REINVESTMENT_|DRAW_DOWN_BRAKE|CONFIRM_TICKS|MIN_HOLD_AMOUNT|defaultSlippage)/,
     ];
     for (const [k, v] of Object.entries(process.env)) {
       if (/KEY|TOKEN|SECRET|PASSWORD/i.test(k)) continue;
-      if (GENERIC.some((re) => re.test(k))) out[k] = v;
+      if (GEN.some((re) => re.test(k))) out[k] = v;
     }
   }
   return out;
 }
-
 app.get("/strategies/:id/config", (req, res) =>
   res.json({
     strategyId: req.params.id,
@@ -272,7 +244,7 @@ app.get("/strategies/:id/config", (req, res) =>
   })
 );
 
-// ------------------- BOT REGISTRY -------------------
+// ------------------- Bots registry -------------------
 /**
  * @type {Record<string, {
  *  id:string, name:string, status:'running'|'stopped'|'starting'|'stopping',
@@ -280,7 +252,7 @@ app.get("/strategies/:id/config", (req, res) =>
  *  child?:import('child_process').ChildProcess, _sim?:any,
  *  logs:string[], cursor:number,
  *  buys:number, sells:number, cash:number, cryptoMkt:number, locked:number, totalPL:number,
- *  beginningPortfolioValue?:number,
+ *  beginningPortfolioValue?:number, bpvSource?:'initial'|'log',
  *  startedAt?:number, bornAt:number
  * }>}
  */
@@ -292,15 +264,22 @@ function pushLog(bot, line) {
   bot.logs.push(entry);
   if (bot.logs.length > 12000) bot.logs.splice(0, bot.logs.length - 12000);
   bot.cursor += 1;
-
-  // also append to disk for easy sharing
   try {
     const dir = path.join(BOT_DATA_ROOT, bot.id);
     ensureDir(dir);
     fs.appendFileSync(path.join(dir, "latest.log"), entry + "\n");
   } catch {}
 }
-
+function readMeta(b) {
+  try {
+    const p = path.join(BOT_DATA_ROOT, b.id, "meta.json");
+    if (fs.existsSync(p)) {
+      const j = JSON.parse(fs.readFileSync(p, "utf8"));
+      return j || {};
+    }
+  } catch {}
+  return {};
+}
 function computePl24h(bot) {
   const now = new Date();
   const anchor = new Date(now);
@@ -308,60 +287,46 @@ function computePl24h(bot) {
   if (anchor > now) anchor.setDate(anchor.getDate() - 1);
   let sum = 0;
   for (const line of bot.logs) {
-    const m = /^([^\s]+)\s+/.exec(line);
-    if (!m) continue;
-    const when = new Date(m[1]);
+    const t = /^([^\s]+)\s+/.exec(line)?.[1];
+    if (!t) continue;
+    const when = new Date(t);
     if (!isFinite(when.getTime()) || when < anchor) continue;
     const mm = /P\/L\s*\$([0-9.,-]+)/i.exec(line);
     if (mm) {
-      const val = parseFloat(mm[1].replace(/,/g, ""));
-      if (!Number.isNaN(val)) sum += val;
+      const v = parseFloat(mm[1].replace(/,/g, ""));
+      if (!Number.isNaN(v)) sum += v;
     }
   }
   return { pl24h: sum, windowStart: anchor.toISOString() };
 }
-
 function durationString(bot) {
   if (!bot.startedAt) return "—";
   const ms = Date.now() - bot.startedAt;
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  const s = Math.floor((ms % 60000) / 1000);
+  const h = Math.floor(ms / 3600000),
+    m = Math.floor((ms % 3600000) / 60000),
+    s = Math.floor((ms % 60000) / 1000);
   return `${h}h ${m}m ${s}s`;
 }
-
 function lifetimePlAveragePerDay(bot) {
   const now = Date.now();
   const days = Math.max((now - (bot.bornAt || now)) / 86400000, 1 / 24);
   return bot.totalPL / days;
 }
-
-function toNum(val) {
-  if (val == null) return null;
-  const n = parseFloat(String(val).replace(/[$, \t]/g, ""));
+function toNum(v) {
+  if (v == null) return null;
+  const n = parseFloat(String(v).replace(/[$, \t]/g, ""));
   return Number.isFinite(n) ? n : null;
 }
-
-// robust parsing for testPrice_Dev.js
 function parseRuntimeMetrics(bot, ln) {
-  // Beginning Portfolio Value
   const mBegin = /Beginning Portfolio Value\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
   if (mBegin) {
     const v = toNum(mBegin[1]);
     if (v !== null) {
       bot.beginningPortfolioValue = v;
-      // derive initial crypto if we have cash (initial balance) and maybe locked
-      const initCrypto = v - Number(bot.cash || 0) - Number(bot.locked || 0);
-      if (
-        isFinite(initCrypto) &&
-        (bot.cryptoMkt == null || bot.cryptoMkt === 0)
-      ) {
-        bot.cryptoMkt = initCrypto;
-      }
+      bot.bpvSource = "log";
+      saveBotMeta(BOT_DATA_ROOT, bot);
     }
   }
-
-  // Compact triple
   const triple =
     /Cash\s*[:=]\s*\$?([0-9.,-]+)\s*,\s*Crypto\s*[:=]\s*\$?([0-9.,-]+)\s*,\s*Locked\s*[:=]\s*\$?([0-9.,-]+)/i.exec(
       ln
@@ -374,14 +339,11 @@ function parseRuntimeMetrics(bot, ln) {
     const l = toNum(triple[3]);
     if (l !== null) bot.locked = l;
   }
-
-  // Separate lines (final/status blocks)
   const mCash = /(^|\b)Cash\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
   if (mCash) {
     const v = toNum(mCash[2]);
     if (v !== null) bot.cash = v;
   }
-
   const mCrypto = /(^|\b)Crypto(?:\s*\(mkt\))?\s*[:=]\s*\$?([0-9.,-]+)/i.exec(
     ln
   );
@@ -389,29 +351,22 @@ function parseRuntimeMetrics(bot, ln) {
     const v = toNum(mCrypto[2]);
     if (v !== null) bot.cryptoMkt = v;
   }
-
   const mLocked = /(^|\b)Locked\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
   if (mLocked) {
     const v = toNum(mLocked[2]);
     if (v !== null) bot.locked = v;
   }
-
-  // SELL executed ... Locked: $X (accumulate locked)
   const sellLocked = /SELL executed.*Locked\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
   if (sellLocked) {
     const v = toNum(sellLocked[1]);
     if (v !== null && v >= 0) bot.locked = Number(bot.locked || 0) + v;
   }
-
-  // Total P/L
   const mTotal =
     /(Total P\/L|Total PL|P\/L total)\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
   if (mTotal) {
     const v = toNum(mTotal[2]);
     if (v !== null) bot.totalPL = v;
   }
-
-  // If beginning still missing but we have decent numbers, infer once
   if (
     (!bot.beginningPortfolioValue || bot.beginningPortfolioValue === 0) &&
     typeof bot.cash === "number" &&
@@ -421,42 +376,35 @@ function parseRuntimeMetrics(bot, ln) {
     if (Number.isFinite(inferred) && inferred > 0)
       bot.beginningPortfolioValue = inferred;
   }
-
-  // Trade counters
   if (/(BUY executed|🟢\s*BUY|\bBUY\b)/i.test(ln)) bot.buys += 1;
   if (/(SELL executed|🔴\s*SELL|\bSELL\b)/i.test(ln)) bot.sells += 1;
 }
 
-// ------------------- SPAWN REAL SCRIPT -------------------
-async function resolveChoiceIndexByIdSafe(strategyId) {
+// ------------------- Spawn real script -------------------
+async function resolveChoiceIndexByIdSafe(id) {
   try {
-    return await resolveChoiceIndexById(strategyId);
+    return await resolveChoiceIndexById(id);
   } catch {
     return undefined;
   }
 }
-
 async function spawnReal(bot) {
   const dataDir = path.join(BOT_DATA_ROOT, bot.id);
   ensureDir(dataDir);
 
-  // seed a holdings file if missing
+  // Seed only once
   try {
-    const dest = path.join(dataDir, "cryptoHoldings.json");
-    if (!fs.existsSync(dest)) {
+    const seededFlag = path.join(dataDir, "seeded.flag");
+    if (!fs.existsSync(seededFlag)) {
+      const dest = path.join(dataDir, "cryptoHoldings.json");
       const tmpl =
         process.env.TEMPLATE_HOLDINGS_FILE ||
         path.join(BACKEND_DIR, "data", "default", "cryptoHoldings.json");
-      if (fs.existsSync(tmpl)) {
-        ensureDir(path.dirname(dest));
+      if (!fs.existsSync(dest) && fs.existsSync(tmpl)) {
         fs.copyFileSync(tmpl, dest);
         pushLog(bot, `[${bot.id}] seeded holdings from ${tmpl}`);
-      } else {
-        pushLog(
-          bot,
-          `[${bot.id}] WARNING: no template holdings found at ${tmpl}`
-        );
       }
+      fs.writeFileSync(seededFlag, nowIso());
     }
   } catch (e) {
     pushLog(
@@ -465,7 +413,6 @@ async function spawnReal(bot) {
     );
   }
 
-  // strip namespaces for script-visible config
   const cleanConfig = {};
   for (const [k, v] of Object.entries(bot.config || {})) {
     const stripped = k
@@ -473,13 +420,12 @@ async function spawnReal(bot) {
       .replace(/^STRAT_[A-Z0-9_]+_/, "");
     cleanConfig[stripped] = v;
   }
-
   const choiceIndex = await resolveChoiceIndexByIdSafe(bot.strategyId);
   const env = {
     ...process.env,
     BOT_ID: bot.id,
     DATA_DIR: dataDir,
-    STRATEGY_CHOICE: choiceIndex, // 1..N index for testPrice_Dev.js
+    STRATEGY_CHOICE: choiceIndex,
     ...cleanConfig,
   };
 
@@ -492,7 +438,6 @@ async function spawnReal(bot) {
       cwd: BACKEND_DIR,
     });
     bot.child = child;
-
     child.stdout.on("data", (buf) => {
       const lines = buf.toString("utf8").split(/\r?\n/).filter(Boolean);
       for (const ln of lines) {
@@ -515,13 +460,12 @@ async function spawnReal(bot) {
       bot,
       `[${bot.id}] WARN: ${e?.message || e}. Falling back to simulator.`
     );
-    // simulator
     bot._sim = setInterval(() => {
       if (bot.status !== "running") return;
-      const delta = (Math.random() - 0.5) * 5;
-      bot.totalPL += delta;
-      bot.cash = (bot.cash || 0) + delta * 0.5;
-      bot.cryptoMkt = (bot.cryptoMkt || 0) + delta * 0.5;
+      const d = (Math.random() - 0.5) * 5;
+      bot.totalPL += d;
+      bot.cash = (bot.cash || 0) + d * 0.5;
+      bot.cryptoMkt = (bot.cryptoMkt || 0) + d * 0.5;
       pushLog(
         bot,
         `💤 Strategy decision for BTCUSD: HOLD @ $${(
@@ -541,12 +485,12 @@ async function spawnReal(bot) {
           bot.cryptoMkt || 0
         ).toFixed(2)}, Locked: $${(bot.locked || 0).toFixed(2)}`
       );
-      pushLog(bot, `P/L $${delta.toFixed(2)}`);
+      pushLog(bot, `P/L $${d.toFixed(2)}`);
     }, 2000);
   }
 }
 
-// ----------------------- ROUTES -----------------------
+// ------------------- Routes -------------------
 const r = express.Router();
 
 r.get("/strategies", async (_req, res) => res.json(await scanStrategies()));
@@ -557,7 +501,8 @@ r.get("/strategies/:id/config", (req, res) =>
   })
 );
 
-r.get("/bots", (_req, res) => {
+// list + snapshots (single call for list screen)
+r.get("/bots", (_req, res) =>
   res.json(
     Object.values(bots).map((b) => ({
       id: b.id,
@@ -567,8 +512,11 @@ r.get("/bots", (_req, res) => {
       symbols: b.symbols,
       config: b.config || {},
     }))
-  );
-});
+  )
+);
+r.get("/bots/snapshots", (_req, res) =>
+  res.json(Object.values(bots).map((b) => buildStats(b)))
+);
 
 r.get("/bots/:id", (req, res) => {
   const b = bots[req.params.id];
@@ -589,7 +537,6 @@ r.post("/bots", (req, res) => {
     return res.status(400).json({ error: "name and strategyId required" });
   const id = String(name).toLowerCase().replace(/\s+/g, "-");
   if (bots[id]) return res.status(409).json({ error: "bot id already exists" });
-
   const beginning = Number(process.env.INITIAL_BALANCE || 0) || 0;
   const bot = {
     id,
@@ -609,13 +556,13 @@ r.post("/bots", (req, res) => {
     startedAt: undefined,
     bornAt: Date.now(),
     beginningPortfolioValue: beginning,
+    bpvSource: "initial",
   };
   bots[id] = bot;
   pushLog(
     bot,
     `[${id}] created: strategy=${strategyId}, symbols=${bot.symbols.join(",")}`
   );
-  // create data directory now so we can seed holdings on start
   ensureDir(path.join(BOT_DATA_ROOT, id));
   saveBotMeta(BOT_DATA_ROOT, bot);
   res.json({ id });
@@ -633,9 +580,8 @@ r.delete("/bots/:id", (req, res) => {
     clearInterval(b._sim);
     b._sim = undefined;
   }
-  const dir = path.join(BOT_DATA_ROOT, b.id);
   try {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(path.join(BOT_DATA_ROOT, b.id), { recursive: true, force: true });
   } catch {}
   delete bots[req.params.id];
   res.json({ ok: true });
@@ -647,16 +593,17 @@ r.get("/bots/:id/status", (req, res) => {
   res.json({ status: b.status });
 });
 
+// idempotent start (won't double-start unless ?force=1)
 r.post("/bots/:id/start", async (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).json({ error: "not_found" });
-  if (b.status !== "running") {
-    b.status = "running";
-    b.startedAt = Date.now();
-    pushLog(b, `[${b.id}] started`);
-    await spawnReal(b);
-    saveBotMeta(BOT_DATA_ROOT, b);
-  }
+  if (b.status === "running" && b.child && !("force" in req.query))
+    return res.json({ ok: true, alreadyRunning: true });
+  b.status = "running";
+  b.startedAt = Date.now();
+  pushLog(b, `[${b.id}] started`);
+  await spawnReal(b);
+  saveBotMeta(BOT_DATA_ROOT, b);
   res.json({ ok: true, status: b.status });
 });
 
@@ -688,8 +635,6 @@ r.get("/bots/:id/logs", (req, res) => {
   const lines = since ? b.logs.slice(Math.max(0, since)) : b.logs.slice(-500);
   res.json({ lines, cursor: String(b.cursor) });
 });
-
-// easy text copy
 r.get("/bots/:id/logs.txt", (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).type("text/plain").send("not_found");
@@ -697,13 +642,27 @@ r.get("/bots/:id/logs.txt", (req, res) => {
 });
 
 function buildStats(b) {
+  // pull persisted BPV if memory doesn't have it yet
+  if (
+    (b.beginningPortfolioValue == null || b.beginningPortfolioValue === 0) &&
+    b.id
+  ) {
+    const persisted = readMeta(b);
+    if (persisted && persisted.beginningPortfolioValue) {
+      b.beginningPortfolioValue = persisted.beginningPortfolioValue;
+      b.bpvSource = b.bpvSource || persisted.bpvSource || "initial";
+    }
+  }
   const { pl24h } = computePl24h(b);
   const currentPortfolioValue =
     Number(b.cash || 0) + Number(b.cryptoMkt || 0) + Number(b.locked || 0);
   return {
     id: b.id,
+    name: b.name,
     status: b.status,
+    strategyId: b.strategyId,
     beginningPortfolioValue: b.beginningPortfolioValue || 0,
+    bpvSource: b.bpvSource || "initial",
     duration: durationString(b),
     buys: b.buys,
     sells: b.sells,
@@ -713,9 +672,15 @@ function buildStats(b) {
     locked: b.locked,
     currentPortfolioValue,
     pl24h,
-    plAvgLifetime: lifetimePlAveragePerDay(b),
+    avgDailyPL: lifetimePlAveragePerDay(b),
   };
 }
+r.get("/bots/:id/summary", (req, res) => {
+  const b = bots[req.params.id];
+  if (!b) return res.status(404).json({ error: "not_found" });
+  saveBotMeta(BOT_DATA_ROOT, b);
+  res.json(buildStats(b));
+});
 r.get("/bots/:id/stats", (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).json({ error: "not_found" });
@@ -727,16 +692,10 @@ r.get("/bots/:id/portfolio", (req, res) => {
   if (!b) return res.status(404).json({ error: "not_found" });
   res.json(buildStats(b));
 });
-r.get("/bots/:id/summary", (req, res) => {
-  const b = bots[req.params.id];
-  if (!b) return res.status(404).json({ error: "not_found" });
-  res.json(buildStats(b));
-});
 
 app.use("/", r);
 app.use("/api", r);
 
-// graceful shutdown
 function persistAll() {
   try {
     for (const b of Object.values(bots)) saveBotMeta(BOT_DATA_ROOT, b);
@@ -752,7 +711,7 @@ process.on("SIGTERM", () => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Control-plane (v3.6) listening on :${PORT}`);
+  console.log(`Control-plane (v3.7) listening on :${PORT}`);
   ensureDir(BOT_DATA_ROOT);
   console.log(`[strategies] DIR = ${path.resolve(STRATEGIES_DIR)}`);
   console.log(`[bot] script = ${path.resolve(BOT_SCRIPT_PATH)}`);

@@ -1,49 +1,53 @@
-import React, { useEffect, useRef } from 'react';
-import { FlatList, StyleSheet, Text, View, Platform } from 'react-native';
+// src/components/LogViewer.tsx
+import React, { useEffect, useMemo, useRef } from 'react';
+import { FlatList, Platform, StyleSheet, Text, View } from 'react-native';
 
-export default function LogViewer({
-  lines,
-  follow = true,
-  maxHeight = 420,
-}: { lines: string[]; follow?: boolean; maxHeight?: number }) {
-  const listRef = useRef<FlatList<string>>(null);
+type Props = { lines: string[]; follow?: boolean };
+
+export default function LogViewer({ lines, follow = true }: Props) {
+  const ref = useRef<FlatList<string>>(null);
+  const data = useMemo(() => lines.map((s, i) => `${i}│${s}`), [lines]);
 
   useEffect(() => {
-    if (follow && listRef.current) {
-      try { listRef.current.scrollToEnd({ animated: false }); } catch {}
-    }
-  }, [lines, follow]);
+    if (!follow || !ref.current) return;
+    requestAnimationFrame(() => ref.current?.scrollToEnd?.({ animated: true }));
+  }, [data.length, follow]);
+
+  const renderItem = ({ item }: { item: string }) => {
+    const line = item.slice(item.indexOf('│') + 1);
+    return <Text selectable style={styles.line}>{line}</Text>;
+  };
 
   return (
-    <View style={[styles.shell, { maxHeight }]}>
+    <View style={styles.box}>
       <FlatList
-        ref={listRef}
-        data={lines}
-        keyExtractor={(_, i) => String(i)}
-        renderItem={({ item }) => <Text style={styles.line} selectable>{item}</Text>}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-        indicatorStyle="white"
+        ref={ref}
+        data={data}
+        keyExtractor={(s) => s}
+        renderItem={renderItem}
+        contentContainerStyle={{ padding: 8 }}
         initialNumToRender={50}
-        windowSize={15}
-        getItemLayout={(_, index) => ({ length: LINE_H, offset: LINE_H * index, index })}
-        contentContainerStyle={{ paddingVertical: 6, paddingHorizontal: 10 }}
+        maxToRenderPerBatch={120}
+        windowSize={9}
+        removeClippedSubviews
       />
     </View>
   );
 }
 
-const LINE_H = 18;
-
 const styles = StyleSheet.create({
-  shell: {
-    borderWidth: 1, borderColor: '#2A3340', borderRadius: 12, overflow: 'hidden',
-    backgroundColor: '#0A0F14',
+  box: {
+    borderWidth: 1,
+    borderColor: '#2A3340',
+    borderRadius: 12,
+    backgroundColor: '#0B0F14',
+    minHeight: 220,
+    maxHeight: 360,
   },
   line: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
     fontSize: 12,
-    lineHeight: LINE_H,
+    lineHeight: 16,
     color: '#DAE0E9',
   },
 });

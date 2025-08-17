@@ -1,0 +1,97 @@
+backend
+├── .DS_Store
+├── .ed25519_key
+├── .env
+├── .env.template
+├── Archive
+│   ├── .DS_Store
+│   ├── bot_engine
+│   │   ├── bot_engine.py
+│   │   ├── public.pem
+│   │   └── strategy_utils.py
+│   ├── cryptoHoldings copy.json
+│   ├── cryptoHoldings.json
+│   ├── generate_ed25519_seed.py
+│   ├── generate_keys.py
+│   ├── getAcctID
+│   ├── logs
+│   │   └── trade-log.txt
+│   ├── mintest.js
+│   ├── private.pem
+│   ├── server.js
+│   ├── strategies
+│   │   └── dynamicRegimeSwitching copy.js
+│   ├── testPrice_debug_output.txt
+│   ├── testPrice.debug.js
+│   └── utils
+│       ├── aiWrapper.js
+│       └── cryptoUtils.js
+├── available_cryptos.json
+├── Backup_Old_Files
+│   ├── .DS_Store
+│   ├── 07192025_liveTestBonk.js
+│   ├── 07292025_Buys_Worked_but_Sold_At_Negative_PL_testPrice_dev copy.js
+│   ├── 07292025_testPrice_dev.js
+│   ├── 07302025_Restored_testPrice_dev .js
+│   └── 08012025_env_backup.txt
+├── checkKey.js
+├── cryptoBuyingPower.js
+├── data
+│   ├── .DS_Store
+│   ├── bot-347ds
+│   │   └── meta.json
+│   ├── bot-uifie
+│   │   └── meta.json
+│   ├── default
+│   │   ├── cryptoHoldings.json
+│   │   └── testPrice_output.txt
+│   ├── local-test
+│   │   └── testPrice_output.txt
+│   └── strat-moderate-btc
+│       └── testPrice_output.txt
+├── Dockerfile
+├── ed25519_pub_base64.txt
+├── ed25519_seed.txt
+├── fetchAccountID.js
+├── fetchAuthToken.js
+├── fetchCryptoWallets.js
+├── fetchPairID.js
+├── generate_ed25519.js
+├── getCryptoHoldings.js
+├── liveTestBonk copy.js
+├── liveTestBonk.js
+├── logs
+│   ├── cryptoHoldings.json
+│   └── testPrice_output.txt
+├── package-lock.json
+├── package.json
+├── portfolio.json
+├── public.der
+├── refreshToken.js
+├── rh_session.json
+├── robinhood_api.js
+├── robinhood_ed25519
+├── robinhood_ed25519.pub
+├── run.sh
+├── sessionManager.js
+├── signRequest.js
+├── strategies
+│   ├── .DS_Store
+│   ├── dynamicRegimeSwitching.js
+│   ├── dynamicRegimeSwitchingProfitLock.js
+│   ├── moderateRetainMode_v1.js
+│   ├── moderateRetainMode_v2.js
+│   ├── moderateRetainMode_v3.js
+│   ├── moderateRetainMode_v4.js
+│   ├── simpleBuySell_v1.1.js
+│   ├── superAdaptiveStrategy.js
+│   ├── ultimateSafetyProfitStrategy_v2.js
+│   └── ultimateSafetyProfitStrategy.js
+├── syncCryptoHoldings.js
+├── testPortfolio.js
+├── testPrice_Dev.js
+├── testPrice.js
+├── trades.json
+└── Works_testPrice_Dev.js
+
+15 directories, 80 files

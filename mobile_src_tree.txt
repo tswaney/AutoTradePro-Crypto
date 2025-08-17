@@ -1,0 +1,39 @@
+mobile/src
+├── .DS_Store
+├── api
+│   ├── .DS_Store
+│   └── client.ts
+├── auth
+│   ├── .DS_Store
+│   └── b2c.ts
+├── client.ts
+├── components
+│   ├── _archive
+│   ├── .DS_Store
+│   ├── BotCard.tsx
+│   ├── HeaderActions.tsx
+│   ├── LogViewer.tsx
+│   ├── Snack.tsx
+│   ├── SummaryBlock.tsx
+│   └── VirtualLogList.tsx
+├── config.ts
+├── hooks
+│   ├── .DS_Store
+│   └── useAsyncAction.ts
+├── screens
+│   ├── .DS_Store
+│   ├── Auth_Email_Pass.tsx
+│   ├── Auth.tsx
+│   ├── BotDetailScreen.tsx
+│   ├── NewBotConfigScreen.tsx
+│   ├── NewBotScreen.tsx
+│   └── SignInScreen.tsx
+├── store
+│   ├── botsSlice.ts
+│   └── index.ts
+├── strategyOptions.json
+├── theme
+│   └── designSystem.ts
+└── types.ts
+
+9 directories, 28 files
