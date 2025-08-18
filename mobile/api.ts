@@ -1,32 +1,46 @@
-// /mobile/api.ts
-const BASE_URL = (process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:4000').replace(/\/$/, '');
+// mobile/api.ts
+const RAW_BASE = (process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:4000').replace(/\/$/, '');
 
-async function tryFetch(path: string, init?: RequestInit) {
-  const url = `${BASE_URL}${path}`;
-  const res = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) } });
-  if (!res.ok) throw new Error(await res.text());
+function withApiPrefix(path: string) {
+  // Accept both "/bots/.." and "/api/bots/.."
+  return path.startsWith('/api') ? path : `/api${path}`;
+}
+
+type Opts = RequestInit & { json?: any };
+
+async function req(path: string, opts: Opts = {}) {
+  const url = `${RAW_BASE}${withApiPrefix(path)}`;
+  const init: RequestInit = {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    body: opts.json != null ? JSON.stringify(opts.json) : opts.body,
+  };
+  const res = await fetch(url, init);
+  if (!res.ok) throw new Error(await res.text().catch(() => 'Request failed'));
   const ct = res.headers.get('content-type') || '';
   return ct.includes('application/json') ? res.json() : res.text();
 }
-function toggleApiPrefix(p: string) {
-  if (p.startsWith('/api/')) return p.replace('/api/', '/');
-  if (p === '/api') return '/';
-  return p.startsWith('/') ? `/api${p}` : `/api/${p}`;
+
+export const apiGet = <T = any>(path: string) => req(path) as Promise<T>;
+export const apiPost = <T = any>(path: string, json?: any) =>
+  req(path, { method: 'POST', json }) as Promise<T>;
+export const apiDelete = <T = any>(path: string) =>
+  req(path, { method: 'DELETE' }) as Promise<T>;
+
+// Quick “does any content exist?” probe used to enable the Logs button
+export async function apiProbe(path: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${RAW_BASE}${withApiPrefix(path)}`, { method: 'GET' });
+    if (!res.ok) return false;
+    const txt = await res.text();
+    return !!txt.trim();
+  } catch {
+    return false;
+  }
 }
-export async function apiGet(path: string) { try { return await tryFetch(path, { method: 'GET' }); } catch { return await tryFetch(toggleApiPrefix(path), { method: 'GET' }); } }
-export async function apiPost(path: string, body?: any) {
-  const init: RequestInit = { method: 'POST', body: body ? JSON.stringify(body) : undefined };
-  try { return await tryFetch(path, init); } catch { return await tryFetch(toggleApiPrefix(path), init); }
-}
-export async function apiDelete(path: string) {
-  const init: RequestInit = { method: 'DELETE' };
-  try { return await tryFetch(path, init); } catch { return await tryFetch(toggleApiPrefix(path), init); }
-}
-export async function apiGetLogs(path: string) {
-  const res: any = await apiGet(path);
-  if (typeof res === 'string') return { lines: (res || '').split(/\r?\n/).filter(Boolean), cursor: undefined };
-  if (Array.isArray(res)) return { lines: res.map(String), cursor: undefined };
-  if (res && Array.isArray(res.lines)) return { lines: res.lines.map(String), cursor: res.cursor };
-  if (res && typeof res.text === 'string') return { lines: res.text.split(/\r?\n/).filter(Boolean), cursor: undefined };
-  return { lines: [], cursor: undefined };
+
+export async function logout() {
+  try {
+    await apiPost('/auth/logout');
+  } catch {}
 }
