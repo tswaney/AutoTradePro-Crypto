@@ -1,10 +1,8 @@
 // mobile/api.ts
-// Locked to localhost so the iOS Simulator reaches your Mac directly.
-// You can later override with EXPO_PUBLIC_API_BASE when moving to Azure.
-const RAW_BASE = (process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:7071').replace(/\/$/, '');
-console.log('API BASE =>', RAW_BASE);  // <— keep this while debugging
+const RAW_BASE = (process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:4000').replace(/\/$/, '');
 
 function withApiPrefix(path: string) {
+  // Accept both "/bots/.." and "/api/bots/.."
   return path.startsWith('/api') ? path : `/api${path}`;
 }
 
@@ -29,6 +27,7 @@ export const apiPost = <T = any>(path: string, json?: any) =>
 export const apiDelete = <T = any>(path: string) =>
   req(path, { method: 'DELETE' }) as Promise<T>;
 
+// Quick “does any content exist?” probe used to enable the Logs button
 export async function apiProbe(path: string): Promise<boolean> {
   try {
     const res = await fetch(`${RAW_BASE}${withApiPrefix(path)}`, { method: 'GET' });

@@ -1,72 +1,124 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import SummaryBlock, { Summary } from './SummaryBlock';
+import { Pressable, View, Text, StyleSheet, ViewStyle } from 'react-native';
 
-export default function BotCard({
-  id, name, status, subtitle, summary, hasLogs,
-  onStart, onStop, onDelete, onOpen,
-}:{
+type AnyRecord = Record<string, any>;
+
+export type BotCardItem = {
   id: string;
-  name: string;
-  status: 'running'|'stopped'|'starting'|'stopping'|string;
-  subtitle?: string;
-  summary?: Summary;
-  hasLogs?: boolean;
-  onStart?: () => void;
-  onStop?: () => void;
-  onDelete?: () => void;
-  onOpen?: () => void;
-}) {
-  const running = status === 'running' || status === 'starting';
+  name?: string;
+  title?: string;
+  version?: string;
+  description?: string;
+} & AnyRecord;
+
+type Props = {
+  item: BotCardItem;
+  selected?: boolean;
+  onPress?: () => void;
+  style?: ViewStyle;
+};
+
+/**
+ * BotCard — generic card for strategies and bots.
+ * - No truncation; text wraps fully.
+ * - Shows a checkmark “chip” when selected.
+ */
+export default function BotCard({ item, selected = false, onPress, style }: Props) {
+  const rawName = (item.name || item.title || item.id || '').toString().trim();
+  const version = (item.version || '').toString().trim();
+  const hasVerInName =
+    version.length > 0 &&
+    new RegExp(`\\b(v\\s*${escapeRegExp(version)}|\\(${escapeRegExp(version)}\\))\\b`, 'i').test(rawName);
+  const title = version && !hasVerInName ? `${rawName} (v${version})` : rawName;
+
+  const description = (item.description || '').toString();
 
   return (
-    <View style={styles.card}>
-      <View style={styles.rowBetween}>
-        <Text style={styles.title}>{name}</Text>
-        <View style={[styles.badge, { backgroundColor: running ? '#12381B' : '#3A1414' }]}>
-          <Text style={{ color: running ? '#5AD07A' : '#E36262', fontWeight: '700', fontSize: 12 }}>
-            {running ? 'RUNNING' : 'STOPPED'}
-          </Text>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.card,
+        selected && styles.cardSelected,
+        pressed && styles.cardPressed,
+        style,
+      ]}
+    >
+      {/* checkmark overlay */}
+      {selected && (
+        <View style={styles.checkWrap}>
+          <Text style={styles.checkText}>✓</Text>
         </View>
-      </View>
-      {!!subtitle && <Text style={styles.sub}>{subtitle}</Text>}
+      )}
 
-      <View style={{ marginTop: 10 }}>
-        <SummaryBlock s={summary} showPlaceholder bpvReady />
+      <View style={styles.content}>
+        <Text style={styles.title}>{title}</Text>
+        {!!description && <Text style={styles.desc}>{description}</Text>}
       </View>
-
-      <View style={[styles.row, { marginTop: 12 }]}>
-        <Pill label="Start" disabled={running} onPress={onStart} kind="primary" />
-        <Pill label="Stop" disabled={!running} onPress={onStop} kind="danger" />
-        <Pill label="Logs" disabled={!hasLogs} onPress={onOpen} />
-        <Pill label="Delete" disabled={running} onPress={onDelete} />
-      </View>
-    </View>
+    </Pressable>
   );
 }
 
-function Pill({ label, onPress, disabled, kind }:{
-  label: string; onPress?: () => void; disabled?: boolean; kind?: 'primary'|'danger';
-}) {
-  return (
-    <TouchableOpacity disabled={disabled} onPress={onPress}
-      style={[styles.pill, disabled?styles.pillDisabled:(kind==='danger'?styles.danger:kind==='primary'?styles.primary:styles.ghost)]}>
-      <Text style={styles.pillText}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
+/* -------------------------------- styles -------------------------------- */
 
 const styles = StyleSheet.create({
-  card: { borderWidth: 1, borderColor: '#2A3340', borderRadius: 16, padding: 12, backgroundColor: '#11161C' },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { fontSize: 16, fontWeight: '700', color: '#E6EDF3' },
-  sub: { color: '#97A3B6', marginTop: 2 },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  row: { flexDirection: 'row', flexWrap: 'wrap' },
-  pill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginRight: 8, marginTop: 6, borderWidth: 1, borderColor: '#2A3340' },
-  pillText: { fontWeight: '600', color: '#E6EDF3' },
-  pillDisabled: { backgroundColor: '#1D2631', opacity: 0.6 },
-  primary: { backgroundColor: '#0E2B5E' },
-  danger: { backgroundColor: '#3A1111' },
-  ghost: { backgroundColor: '#1A1F28' },
+  card: {
+    width: '100%',
+    alignSelf: 'stretch',
+    marginVertical: 6,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    minHeight: 72,
+    overflow: 'visible',
+  },
+  cardSelected: {
+    borderColor: 'rgba(99,102,241,0.55)',
+    backgroundColor: 'rgba(99,102,241,0.08)',
+  },
+  cardPressed: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  content: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    paddingRight: 28, // leave room for the check chip
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  desc: {
+    color: 'rgba(255,255,255,0.78)',
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 16,
+    flexShrink: 1,
+  },
+  checkWrap: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#22c55e', // green
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkText: {
+    color: '#0b0f17',
+    fontWeight: '900',
+    fontSize: 14,
+    lineHeight: 16,
+  },
 });
+
+/* -------------------------------- utils --------------------------------- */
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

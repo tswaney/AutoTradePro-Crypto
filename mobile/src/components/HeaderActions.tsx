@@ -1,15 +1,30 @@
-// /mobile/src/components/HeaderActions.tsx
+// mobile/src/components/HeaderActions.tsx
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-export default function HeaderActions({ onRefresh, onSignOut }: { onRefresh?: () => void; onSignOut?: () => void }) {
+type Props = {
+  onNewBot?: () => void;
+  onRefresh?: () => void;
+  onSignOut?: () => void;
+};
+
+export default function HeaderActions({ onNewBot, onRefresh, onSignOut }: Props) {
   return (
     <View style={styles.headerRow}>
+      {onNewBot && (
+        <TouchableOpacity onPress={onNewBot}>
+          <Text style={styles.headerLink}>New Bot</Text>
+        </TouchableOpacity>
+      )}
       {onRefresh && (
-        <TouchableOpacity onPress={onRefresh}><Text style={styles.headerLink}>Refresh</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onRefresh}>
+          <Text style={styles.headerLink}>Refresh</Text>
+        </TouchableOpacity>
       )}
       {onSignOut && (
-        <TouchableOpacity onPress={onSignOut}><Text style={styles.headerLink}>Sign out</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onSignOut}>
+          <Text style={styles.headerLink}>Sign out</Text>
+        </TouchableOpacity>
       )}
     </View>
   );

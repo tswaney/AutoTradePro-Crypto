@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 export type Summary = {
   beginningPortfolioValue?: number;
@@ -14,36 +14,32 @@ export type Summary = {
   locked?: number;
 };
 
-const fmt = (n?: number) =>
-  typeof n === 'number' && Number.isFinite(n) ? `$${n.toFixed(2)}` : '—';
+export default function SummaryBlock({ title = "Total Portfolio Summary", summary }: { title?: string; summary?: Summary }) {
+  const s = summary || {};
+  const rows: Array<[string, string]> = [];
 
-export default function SummaryBlock({ s, showPlaceholder, bpvReady }:{
-  s?: Summary; showPlaceholder?: boolean; bpvReady?: boolean;
-}) {
-  const cash = num(s?.cash) ?? 0;
-  const crypto = num(s?.cryptoMkt) ?? 0;
-  const locked = num(s?.locked) ?? 0;
-  const currentValue = cash + crypto + locked;
+  rows.push(["Beginning Portfolio Value", money(num(s.beginningPortfolioValue))]);
+  rows.push(["Duration", s.duration || "—"]);
+  rows.push(["Buys", String(s.buys ?? 0)]);
+  rows.push(["Sells", String(s.sells ?? 0)]);
+  rows.push(["Total P/L", money(num(s.totalPL))]);
 
-  const rows: Array<[string, string]> = [
-    ['Beginning Portfolio Value', fmt(bpvReady ? num(s?.beginningPortfolioValue) : 0)],
-    ['Duration', s?.duration || (showPlaceholder ? '—' : '')],
-    ['Buys', s?.buys != null ? String(s.buys) : (showPlaceholder ? '—' : '')],
-    ['Sells', s?.sells != null ? String(s.sells) : (showPlaceholder ? '—' : '')],
-    ['Total P/L', money(num(s?.totalPL))],
-  ];
+  const _pl24h = num(s.pl24h);
+  if (typeof _pl24h === "number") rows.push(["24h Total P/L", money(_pl24h)]);
 
-  if (s?.pl24h != null) rows.push(['24h Total P/L', money(num(s.pl24h))]);
-  if (s?.avgDailyPL != null) rows.push(['Avg P/L (lifetime, per day)', money(num(s.avgDailyPL))]);
+  const _avg = num(s.avgDailyPL);
+  if (typeof _avg === "number") rows.push(["Avg P/L (lifetime, per day)", money(_avg)]);
 
-  rows.push(['Cash', fmt(num(s?.cash))]);
-  rows.push(['Crypto (mkt)', fmt(num(s?.cryptoMkt))]);
-  rows.push(['Locked', fmt(num(s?.locked))]);
-  rows.push(['Current Portfolio Value', fmt(currentValue)]);
+  rows.push(["Cash", money(num(s.cash))]);
+  rows.push(["Crypto (mkt)", money(num(s.cryptoMkt))]);
+  rows.push(["Locked", money(num(s.locked))]);
+
+  const current = sumDefined([s.cash, s.cryptoMkt, s.locked]);
+  rows.push(["Current Portfolio Value", money(current)]);
 
   return (
     <View style={styles.card}>
-      <Text style={styles.h}>Total Portfolio Summary</Text>
+      <Text style={styles.h}>{title}</Text>
       {rows.map(([k, v]) => (
         <View key={k} style={styles.r}>
           <Text style={styles.k}>{k}</Text>
@@ -56,21 +52,25 @@ export default function SummaryBlock({ s, showPlaceholder, bpvReady }:{
 
 function num(v: any): number | undefined {
   if (v == null) return undefined;
-  if (typeof v === 'string') {
-    const n = Number(v.replace(/[$,]/g, ''));
+  if (typeof v === "string") {
+    const n = Number(v.replace(/[$,]/g, ""));
     return Number.isFinite(n) ? n : undefined;
   }
   return Number.isFinite(v) ? v : undefined;
 }
 function money(n?: number) {
-  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
-  return `$${n.toFixed(2)}`;
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  const v = Math.round((n + Number.EPSILON) * 100) / 100;
+  return `$${v.toFixed(2)}`;
+}
+function sumDefined(arr: Array<any>) {
+  return arr.reduce((acc, x) => (Number.isFinite(x) ? acc + Number(x) : acc), 0);
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: 1, borderColor: '#2A3340', borderRadius: 12, padding: 12, backgroundColor: '#0E131A' },
-  h: { color: '#E6EDF3', fontWeight: '700', marginBottom: 8 },
-  r: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  k: { color: '#97A3B6' },
-  v: { color: '#E6EDF3', fontWeight: '600' },
+  card: { borderWidth: 1, borderColor: "#2A3340", borderRadius: 12, padding: 12, backgroundColor: "#0E131A" },
+  h: { color: "#E6EDF3", fontWeight: "700", marginBottom: 8 },
+  r: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
+  k: { color: "#97A3B6" },
+  v: { color: "#E6EDF3", fontWeight: "600" },
 });

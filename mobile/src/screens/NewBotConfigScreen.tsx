@@ -1,296 +1,254 @@
-// /mobile/src/screens/NewBotConfigScreen.tsx
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, SafeAreaView, StyleSheet, Text, TextInput,
-  TouchableOpacity, View, FlatList, Switch, ActivityIndicator, Platform
-} from 'react-native';
-import { apiGet, apiPost } from '../api/client';
+  View, Text, TextInput, FlatList, Pressable, StyleSheet, Alert,
+  ActivityIndicator, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView,
+} from "react-native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 
-type FieldType = 'number'|'string'|'boolean';
-type Field = { key: string; value: string; type: FieldType };
+type StrategyMeta = { id: string; name: string; version?: string; description?: string };
+type RouteParams = { draft?: { name: string; symbols: string }; strategy?: StrategyMeta };
 
-// ---------- grouping rules ----------
-type SectionKey =
-  | 'general'
-  | 'grid'
-  | 'atr'
-  | 'profitLock'
-  | 'dca'
-  | 'regime'
-  | 'signals'
-  | 'advanced';
+// Robust defaults (simulator/device)
+const iosLocal = "http://127.0.0.1:4000";
+const androidLocal = "http://10.0.2.2:4000";
+const DEFAULT_BASE = Platform.select({ ios: iosLocal, android: androidLocal, default: "http://localhost:4000" })!;
+const API_BASE =
+  (process as any)?.env?.EXPO_PUBLIC_API_BASE ||
+  (global as any)?.EXPO_PUBLIC_API_BASE ||
+  DEFAULT_BASE;
 
-const SECTION_META: Record<SectionKey, { title: string; advanced?: boolean; order: number }> = {
-  general:    { title: 'General',                order: 10 },
-  grid:       { title: 'Grid',                   order: 20 },
-  atr:        { title: 'ATR',                    order: 30 },
-  profitLock: { title: 'Profit Lock',            order: 40 },
-  dca:        { title: 'DCA / Accumulate',       order: 50 },
-  regime:     { title: 'Regime / Dynamic',       order: 60 },
-  signals:    { title: 'Signals / Indicators',   order: 70 },
-  advanced:   { title: 'Advanced', advanced: true, order: 1000 },
-};
+export default function NewBotConfigScreen() {
+  const nav = useNavigation<any>();
+  const route = useRoute<any>();
+  const { draft, strategy } = (route?.params || {}) as RouteParams;
 
-function groupForKey(k: string): SectionKey {
-  const K = k.toUpperCase();
+  const [loading, setLoading] = useState(false);
+  const [cfg, setCfg] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // core buckets
-  if (K.startsWith('GRID_')) return 'grid';
-  if (K.startsWith('ATR_')) return 'atr';
-  if (K.startsWith('PROFIT_LOCK_')) return 'profitLock';
-  if (K.startsWith('DCA_') || K.startsWith('ACCUM_') || K.startsWith('ACCUMULATE_')) return 'dca';
-  if (K.startsWith('REGIME_') || K.startsWith('DYNAMIC_')) return 'regime';
-  if (K.startsWith('SMA_') || K.startsWith('EMA_') || K.startsWith('VWAP_') || K.startsWith('RSI_')) return 'signals';
+  // --- debug tray (starts visible) ---
+  const [showDebug, setShowDebug] = useState(true);
+  const tapsRef = useRef(0);
+  const [logs, setLogs] = useState<string[]>([]);
+  const log = (m: string, o?: any) => {
+    const s = `${new Date().toISOString()}  ${m}${o === undefined ? "" : " " + safeInspect(o)}`;
+    console.log("[NewBotConfig]", s);
+    setLogs((prev) => [s, ...prev].slice(0, 250));
+  };
 
-  // advanced buckets (collapsed by default)
-  if (K.startsWith('AUTO_TUNE_')) return 'advanced';
-  if (K.startsWith('ULTIMATE_'))  return 'advanced';
-  if (K.startsWith('SUPER_'))     return 'advanced';
-  if (K.startsWith('RISK_'))      return 'advanced';
-  if (K.startsWith('REINVESTMENT_')) return 'advanced';
-  if (K.includes('DRAW') && K.includes('BRAKE')) return 'advanced';
-  if (K.startsWith('WEIGHTED_'))  return 'advanced';
-  if (/^LEVELS?$/.test(K) || K.startsWith('LEVEL_')) return 'advanced';
-  if (K.startsWith('PULLBACK_'))  return 'advanced';
-  if (K.startsWith('FLAT_PROFIT_')) return 'advanced';
-  if (K.startsWith('DEBUG') || K.startsWith('LOG_') || K.includes('EXPERIMENT')) return 'advanced';
-
-  return 'general';
-}
-
-// ---------- type helpers ----------
-function inferType(_k: string, v: any): FieldType {
-  const s = String(v ?? '').trim();
-  if (/^(true|false)$/i.test(s)) return 'boolean';
-  if (/^-?\d+(\.\d+)?$/.test(s)) return 'number';
-  return 'string';
-}
-
-type Row =
-  | { kind: 'section'; key: string; section: SectionKey; title: string; count: number; advanced?: boolean; collapsed: boolean }
-  | { kind: 'field'; key: string; section: SectionKey; field: Field };
-
-export default function NewBotConfigScreen({ route, navigation }: any) {
-  const draft = route.params?.draft || {};
-  const strategy = route.params?.strategy || null;
-
-  const [fields, setFields] = React.useState<Field[]>([]);
-  const [collapsed, setCollapsed] = React.useState<Record<SectionKey, boolean>>({
-    general: false,
-    grid: false,
-    atr: false,
-    profitLock: false,
-    dca: false,
-    regime: false,
-    signals: false,
-    advanced: true, // Advanced hidden by default
-  });
-  const [loading, setLoading] = React.useState(true);
-  const [submitting, setSubmitting] = React.useState(false);
-
-  const loadDefaults = React.useCallback(async () => {
-    setLoading(true);
-    try {
-      const cfg = await apiGet(`/strategies/${encodeURIComponent(draft.strategyId)}/config`);
-      const entries = Object.entries(cfg?.defaults || {});
-      const list: Field[] = entries.map(([key, val]: any) => ({
-        key,
-        value: String(val ?? ''),
-        type: inferType(key, val),
-      })).sort((a,b) => a.key.localeCompare(b.key));
-      setFields(list);
-    } catch {
-      setFields([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [draft.strategyId]);
-
-  React.useEffect(() => { loadDefaults(); }, [loadDefaults]);
-
-  const updateField = (k: string, v: string) =>
-    setFields(fs => fs.map(f => f.key === k ? { ...f, value: v } : f));
-
-  const toggleBool = (k: string) =>
-    setFields(fs => fs.map(f => f.key === k ? { ...f, value: (String(f.value).toLowerCase() === 'true' ? 'false' : 'true') } : f));
-
-  const toggleSection = (s: SectionKey) =>
-    setCollapsed(c => ({ ...c, [s]: !c[s] }));
-
-  // Build rows (section headers + visible fields)
-  const rows: Row[] = React.useMemo(() => {
-    // bucket fields
-    const buckets: Record<SectionKey, Field[]> = {
-      general: [], grid: [], atr: [], profitLock: [], dca: [], regime: [], signals: [], advanced: [],
-    };
-    for (const f of fields) buckets[groupForKey(f.key)].push(f);
-
-    // order sections and build rows
-    const sections = (Object.keys(buckets) as SectionKey[])
-      .filter((s) => buckets[s].length > 0)
-      .sort((a, b) => SECTION_META[a].order - SECTION_META[b].order);
-
-    const out: Row[] = [];
-    for (const s of sections) {
-      const meta = SECTION_META[s];
-      out.push({
-        kind: 'section',
-        key: `__header__${s}`,
-        section: s,
-        title: meta.title,
-        count: buckets[s].length,
-        advanced: !!meta.advanced,
-        collapsed: !!collapsed[s],
-      });
-      if (!collapsed[s]) {
-        for (const f of buckets[s]) {
-          out.push({ kind: 'field', key: f.key, section: s, field: f });
-        }
+  useEffect(() => {
+    log("API BASE =>", API_BASE);
+    if (!strategy?.id) return;
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const url = `${API_BASE}/api/strategies/${encodeURIComponent(strategy.id)}/config`;
+        log("GET defaults", url);
+        const txt = await fetchWithTimeoutText(url);
+        const json = safeJSON(txt);
+        log("defaults ok", json);
+        const defaults = (json as any)?.defaults || {};
+        const str: Record<string, string> = {};
+        Object.entries(defaults).forEach(([k, v]) => (str[k] = String(v)));
+        if (alive) setCfg(str);
+      } catch (e: any) {
+        log("defaults error", e?.message || String(e));
+        setError(e?.message || String(e));
+      } finally {
+        if (alive) setLoading(false);
       }
+    })();
+    return () => { alive = false; };
+  }, [strategy?.id]);
+
+  const kvPairs = useMemo(() => Object.entries(cfg), [cfg]);
+  const updateKey = (k: string, v: string) => setCfg((s) => ({ ...s, [k]: v }));
+
+  const createBot = async () => {
+    log("Create Bot pressed");
+    const missing =
+      !draft?.name?.trim() ? "name" :
+      !draft?.symbols?.trim() ? "symbols" :
+      !strategy?.id ? "strategy" : "";
+
+    if (missing) {
+      const msg = `Missing data: ${missing}`;
+      log("guard fail", { missing, draft, strategyId: strategy?.id });
+      Alert.alert("Missing data", msg);
+      return;
     }
-    return out;
-  }, [fields, collapsed]);
 
-  const resetLocalChanges = () => loadDefaults();
-
-  const create = async () => {
     setSubmitting(true);
     try {
-      const config = Object.fromEntries(fields.map(f => [f.key, String(f.value ?? '')]));
-      const res = await apiPost('/bots', { ...draft, config });
-      if (res?.id) return navigation.replace('BotDetail', { botId: res.id, botName: draft.name });
-      Alert.alert('Error', 'Unexpected response creating bot');
-    } catch (e:any) {
-      Alert.alert('Error', e?.message || String(e));
+      const body = {
+        name: draft!.name.trim(),
+        strategyId: strategy!.id,
+        config: { ...cfg, SYMBOLS: draft!.symbols.trim() },
+      };
+
+      // avoid stringify traps in log (BigInt/cycles)
+      log("POST /api/bots payload keys", Object.keys(body.config).length);
+
+      const url = `${API_BASE}/api/bots`;
+      const { ok, status, text } = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      log("POST response meta", { ok, status, len: text?.length });
+
+      if (!ok) throw new Error(`HTTP ${status}: ${text?.slice(0, 200) || "no body"}`);
+
+      const json = safeJSON(text);
+      const id = (json as any)?.id || guessIdFromText(text);
+      log("parsed id", id);
+
+      if (!id) throw new Error(`Create bot response missing 'id': ${text?.slice(0, 200)}`);
+
+      Alert.alert("Bot created", `ID: ${id}`, [
+        { text: "OK", onPress: () => nav.replace("BotDetail", { id }) },
+      ]);
+    } catch (e: any) {
+      log("Create failed", e?.message || String(e));
+      Alert.alert("Create failed", e?.message || String(e));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const renderField = (item: Field) => {
-    const isBool = item.type === 'boolean';
-    const isNum = item.type === 'number';
-    return (
-      <View style={styles.row}>
-        <Text style={styles.k}>{item.key}</Text>
-        {isBool ? (
-          <View style={styles.switchWrap}>
-            <Text style={styles.boolLabel}>{String(item.value).toLowerCase()==='true' ? 'On' : 'Off'}</Text>
-            <Switch
-              value={String(item.value).toLowerCase() === 'true'}
-              onValueChange={() => toggleBool(item.key)}
-            />
-          </View>
-        ) : (
-          <TextInput
-            value={item.value}
-            onChangeText={(t)=>updateField(item.key,t)}
-            style={styles.input}
-            placeholderTextColor="#7A8797"
-            keyboardType={isNum ? (Platform.OS === 'ios' ? 'decimal-pad' : 'numeric') : 'default'}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        )}
-      </View>
-    );
-  };
-
-  const renderRow = ({ item }: { item: Row }) => {
-    if (item.kind === 'section') {
-      const chevron = item.collapsed ? '▸' : '▾';
-      return (
-        <TouchableOpacity style={[styles.sectionHdr, item.advanced && styles.sectionHdrAdv]} onPress={() => toggleSection(item.section)}>
-          <Text style={styles.sectionTitle}>{chevron} {item.title}</Text>
-          <Text style={styles.sectionCount}>{item.count}</Text>
-        </TouchableOpacity>
-      );
+  const onTitleTap = () => {
+    tapsRef.current += 1;
+    if (tapsRef.current >= 5) {
+      setShowDebug((s) => !s);
+      tapsRef.current = 0;
     }
-    return renderField(item.field);
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0B1117' }}>
-      <View style={{ padding: 16, paddingBottom: 0 }}>
-        <Text style={styles.h1}>Bot Settings</Text>
-        <Text style={styles.sub}>
-          Strategy: <Text style={styles.bold}>
-            {strategy?.name || draft.strategyId}{strategy?.version ? ` (${strategy.version})` : ''}
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0B1117" }}>
+      <KeyboardAvoidingView behavior={Platform.select({ ios: "padding", android: undefined })} style={{ flex: 1 }}>
+        <View style={styles.container}>
+          <Text style={styles.title} onPress={onTitleTap}>Configure Strategy</Text>
+          <Text style={styles.subTitle}>
+            {strategy?.name || strategy?.id} {strategy?.version ? `v${strategy.version}` : ""}
           </Text>
-        </Text>
-        <Text style={styles.sub}>
-          Bot name: <Text style={styles.bold}>{draft?.name}</Text>
-        </Text>
-        <Text style={styles.sub}>
-          Symbols: <Text style={styles.bold}>{Array.isArray(draft?.symbols) ? draft.symbols.join(', ') : String(draft?.symbols || '')}</Text>
-        </Text>
-      </View>
+          {!!draft && (
+            <Text style={styles.caption}>
+              Draft: <Text style={styles.bold}>{draft.name}</Text> — Symbols: {draft.symbols}
+            </Text>
+          )}
 
-      {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator />
-        </View>
-      ) : (
-        <FlatList
-          data={rows}
-          keyExtractor={(r) => r.key}
-          renderItem={renderRow}
-          contentContainerStyle={{ paddingBottom: 16 }}
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>No configurable options detected for this strategy.</Text>
-              <Text style={styles.emptyTextDim}>
-                You can still create the bot with the current environment defaults.
-              </Text>
+          {loading ? (
+            <ActivityIndicator />
+          ) : error ? (
+            <Text style={styles.error}>Failed to load defaults: {error}</Text>
+          ) : kvPairs.length === 0 ? (
+            <Text style={{ opacity: 0.7, marginTop: 8 }}>No configurable options for this strategy.</Text>
+          ) : (
+            <FlatList
+              data={kvPairs}
+              keyExtractor={([k]) => k}
+              renderItem={({ item: [k, v] }) => (
+                <View style={styles.row}>
+                  <Text style={styles.key}>{k}</Text>
+                  <TextInput
+                    value={v}
+                    onChangeText={(t) => updateKey(k, t)}
+                    style={styles.value}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType={/^[0-9.\-]+$/.test(v) ? "decimal-pad" : "default"}
+                  />
+                </View>
+              )}
+              style={{ marginTop: 8 }}
+            />
+          )}
+
+          <View style={styles.btnRow}>
+            <Pressable style={[styles.btn, styles.btnSecondary]} onPress={() => nav.goBack()}>
+              <Text style={styles.btnText}>Back</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.btn, styles.btnPrimary, submitting && { opacity: 0.7 }]}
+              disabled={submitting}
+              onPress={() => { void createBot().catch(() => {}); }}
+            >
+              <Text style={[styles.btnText, styles.btnTextPrimary]}>{submitting ? "Creating..." : "Create Bot"}</Text>
+            </Pressable>
+          </View>
+
+          {showDebug && (
+            <View style={styles.debugBox}>
+              <Text style={styles.debugTitle}>Debug</Text>
+              <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 6 }}>
+                {logs.map((l, i) => (
+                  <Text key={i} style={styles.debugLine}>{l}</Text>
+                ))}
+              </ScrollView>
+              <Text style={styles.debugHint}>Tap “Configure Strategy” 5× to toggle this box.</Text>
+              <Text style={styles.debugHint}>API_BASE = {API_BASE}</Text>
             </View>
-          }
-          showsVerticalScrollIndicator
-          indicatorStyle="white"
-        />
-      )}
-
-      <View style={styles.footer}>
-        <TouchableOpacity onPress={resetLocalChanges} style={[styles.btn, styles.ghost]} disabled={loading || submitting}>
-          <Text style={styles.btnGhostText}>Reload defaults</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={create} style={styles.btn} disabled={loading || submitting}>
-          <Text style={styles.btnText}>{submitting ? 'Creating…' : 'Create & Open'}</Text>
-        </TouchableOpacity>
-      </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+/* -------- helpers -------- */
+function safeJSON(t?: string) { try { return t ? JSON.parse(t) : {}; } catch { return {}; } }
+function guessIdFromText(t?: string) {
+  if (!t) return null;
+  const m = /"id"\s*:\s*"([^"]+)"/.exec(t) || /id[:=]\s*([A-Za-z0-9._-]+)/.exec(t);
+  return m?.[1] || null;
+}
+function safeInspect(o: any) {
+  try { return JSON.stringify(o); } catch { return String(o); }
+}
+async function fetchWithTimeoutText(url: string, ms = 10000) {
+  const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), ms);
+  try { const r = await fetch(url, { signal: ctrl.signal }); const t = await r.text();
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${t?.slice(0, 200) || "no body"}`); return t; }
+  finally { clearTimeout(to); }
+}
+async function fetchWithTimeout(url: string, init?: RequestInit, ms = 10000) {
+  const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), ms);
+  try { const r = await fetch(url, { ...(init || {}), signal: ctrl.signal });
+        const t = await r.text().catch(() => ""); return { ok: r.ok, status: r.status, text: t }; }
+  finally { clearTimeout(to); }
+}
+
+/* -------- styles -------- */
 const styles = StyleSheet.create({
-  h1:{ color:'#E6EDF3', fontWeight:'700', fontSize:20, marginBottom:6 },
-  sub:{ color:'#97A3B6', marginTop:2 },
-  bold:{ color:'#E6EDF3', fontWeight:'700' },
-
-  sectionHdr:{
-    marginTop: 12, paddingHorizontal: 16, paddingVertical: 10,
-    borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#1A2430',
-    backgroundColor: '#0E1520', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'
+  container: { flex: 1, padding: 16, gap: 10, backgroundColor: "#0B1117" },
+  title: { fontSize: 22, fontWeight: "600", color: "#E6EDF3" },
+  subTitle: { fontSize: 16, opacity: 0.85, color: "#E6EDF3" },
+  caption: { fontSize: 13, opacity: 0.75, marginTop: 2, color: "#97A3B6" },
+  bold: { fontWeight: "600" },
+  row: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 6 },
+  key: { flex: 0.9, fontSize: 13, opacity: 0.85, color: "#E6EDF3" },
+  value: {
+    flex: 1.1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 8, backgroundColor: "rgba(127,127,127,0.07)",
+    fontSize: 15, color: "#E6EDF3",
   },
-  sectionHdrAdv:{
-    backgroundColor: '#0B1117',
+  btnRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  btn: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth },
+  btnPrimary: { backgroundColor: "#4C82F7", borderColor: "#4C82F7" },
+  btnSecondary: {},
+  btnText: { fontSize: 16, color: "#E6EDF3" },
+  btnTextPrimary: { color: "white" },
+  error: { color: "#f55", marginVertical: 6 },
+  debugBox: {
+    marginTop: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: "#2A3340",
+    borderRadius: 10, padding: 10, backgroundColor: "#0E131A",
   },
-  sectionTitle:{ color:'#E6EDF3', fontWeight:'700' },
-  sectionCount:{ color:'#97A3B6', fontWeight:'700' },
-
-  row:{ paddingHorizontal: 16, paddingVertical:10 },
-  k:{ color:'#97A3B6', marginBottom:6, fontSize:12 },
-  input:{ color:'#E6EDF3', borderWidth:1, borderColor:'#2A3340', borderRadius:12, paddingHorizontal:12, paddingVertical:10, backgroundColor:'#0B1117' },
-
-  switchWrap:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth:1, borderColor:'#2A3340', borderRadius:12, paddingHorizontal:12, paddingVertical:10, backgroundColor:'#0B1117' },
-  boolLabel:{ color:'#E6EDF3', marginRight: 8 },
-
-  emptyBox:{ borderWidth:1, borderColor:'#2A3340', borderRadius:12, padding:16, alignItems:'center', marginHorizontal:16, marginTop:12 },
-  emptyText:{ color:'#E6EDF3', fontWeight:'600' },
-  emptyTextDim:{ color:'#97A3B6', marginTop:4 },
-
-  footer:{ padding:16, flexDirection:'row', gap:10, borderTopWidth:1, borderTopColor:'#1A2430', backgroundColor:'#0B1117' },
-  btn:{ flex:1, backgroundColor:'#0E2B5E', borderRadius:12, paddingVertical:12, alignItems:'center' },
-  btnText:{ color:'white', fontWeight:'700' },
-  ghost:{ backgroundColor:'#0F1520', borderWidth:1, borderColor:'#2A3340' },
-  btnGhostText:{ color:'#C9D4E3', fontWeight:'700' },
+  debugTitle: { color: "#E6EDF3", fontWeight: "700", marginBottom: 6 },
+  debugLine: { color: "#9DB0C5", fontSize: 12, marginBottom: 2 },
+  debugHint: { color: "#6E7E94", fontSize: 11, marginTop: 4 },
 });

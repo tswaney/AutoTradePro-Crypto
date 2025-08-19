@@ -93,16 +93,17 @@ export default function BotDetailScreen({ route }: Props) {
   });
 
   const ensureCryptoFallback = (s: Summary): Summary => {
-    if ((s.cryptoMkt == null || !Number.isFinite(s.cryptoMkt)) &&
-        Number.isFinite(s.beginningPortfolioValue) &&
-        Number.isFinite(s.totalPL) &&
-        Number.isFinite(s.cash)) {
-      const locked = Number.isFinite(s.locked) ? (s.locked as number) : 0;
-      const crypto = (s.beginningPortfolioValue as number) + (s.totalPL as number) - (s.cash as number) - locked;
-      return { ...s, cryptoMkt: Math.max(0, Number.isFinite(crypto) ? Number(crypto) : 0) };
-    }
-    return s;
-  };
+  const hasCrypto = s.cryptoMkt != null && Number.isFinite(s.cryptoMkt as any);
+  const hasBegin = Number.isFinite(s.beginningPortfolioValue as any);
+  const hasPl = Number.isFinite(s.totalPL as any);
+  const cash = Number.isFinite(s.cash as any) ? (s.cash as number) : 0; // assume 0 if unknown
+  const locked = Number.isFinite(s.locked as any) ? (s.locked as number) : 0;
+  if (!hasCrypto && hasBegin && hasPl) {
+    const crypto = (s.beginningPortfolioValue as number) + (s.totalPL as number) - cash - locked;
+    return { ...s, cryptoMkt: Math.max(0, Number.isFinite(crypto) ? Number(crypto) : 0) };
+  }
+  return s;
+};
 
   // ------------ API polls ------------
   const refreshStatus = async () => {

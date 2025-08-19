@@ -492,6 +492,7 @@ async function spawnReal(bot) {
 
 // ------------------- Routes -------------------
 const r = express.Router();
+r.post("/auth/logout", (_req, res) => res.json({ ok: true }));
 
 r.get("/strategies", async (_req, res) => res.json(await scanStrategies()));
 r.get("/strategies/:id/config", (req, res) =>
@@ -529,6 +530,28 @@ r.get("/bots/:id", (req, res) => {
     symbols: b.symbols,
     config: b.config || {},
   });
+});
+
+r.post("/bots", (req, res) => {
+  console.log("[/api/bots] POST body:", JSON.stringify(req.body));
+  const id =
+    String(req.body?.id || "").trim() ||
+    `bot-${Math.random().toString(36).slice(2, 8)}`;
+  const name = String(req.body?.name || id);
+  const strategyId = String(req.body?.strategyId || "moderate_retain_v1");
+  const config = req.body?.config || {};
+  if (bots[id]) return res.status(400).json({ error: "exists" });
+  const meta = {
+    id,
+    name,
+    strategyId,
+    status: "stopped",
+    createdAt: Date.now(),
+    config,
+  };
+  const b = (bots[id] = buildInitialBotState(meta));
+  saveBotMeta(BOT_DATA_ROOT, b);
+  res.json({ ok: true, id });
 });
 
 r.post("/bots", (req, res) => {
@@ -601,6 +624,16 @@ r.post("/bots/:id/start", async (req, res) => {
     return res.json({ ok: true, alreadyRunning: true });
   b.status = "running";
   b.startedAt = Date.now();
+  // === session reset (surgical) ===
+  b.buys = 0;
+  b.sells = 0;
+  b.totalPL = 0;
+  b.cash = 0;
+  b.cryptoMkt = 0;
+  b.locked = 0;
+  b.beginningPortfolioValue = 0;
+  b.bpvSource = "initial";
+  // =================================
   pushLog(b, `[${b.id}] started`);
   await spawnReal(b);
   saveBotMeta(BOT_DATA_ROOT, b);
@@ -645,7 +678,9 @@ function buildStats(b) {
   // pull persisted BPV if memory doesn't have it yet
   if (
     (b.beginningPortfolioValue == null || b.beginningPortfolioValue === 0) &&
-    b.id
+    b.id &&
+    b.status !== "running" &&
+    !b.child
   ) {
     const persisted = readMeta(b);
     if (persisted && persisted.beginningPortfolioValue) {
