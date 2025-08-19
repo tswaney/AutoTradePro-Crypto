@@ -1,4 +1,6 @@
-// control-plane/src/index.js (v3.7)
+// control-plane/src/index.js
+// v8 — deep logging for strategy discovery + diagnostics endpoint
+
 import express from "express";
 import cors from "cors";
 import { spawn } from "child_process";
@@ -12,127 +14,118 @@ import { loadAllBotsFromDisk, saveBotMeta, ensureDir } from "./persistence.js";
 dotenv.config();
 const require = createRequire(import.meta.url);
 
+/* ---------------- small helpers ---------------- */
+const ts = () => new Date().toISOString();
+function L(tag, ...args) {
+  console.log(`[${tag}] ${ts()}`, ...args);
+}
+
 function loadEnvIfExists(p) {
   try {
     if (p && fs.existsSync(p)) {
       dotenv.config({ path: p, override: false });
-      console.log(`[env] merged: ${p}`);
+      L("env", "merged:", p);
     }
   } catch {}
 }
+const nowIso = () => new Date().toISOString();
+const slug = (s) =>
+  String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-");
+function toNum(v) {
+  if (v == null) return null;
+  const n = parseFloat(String(v).replace(/[$, \t]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
 
+/* ---------------- config & paths ---------------- */
 const PORT = Number(process.env.PORT || 4000);
 const ROLLOVER_HOUR = Number(process.env.PL_DAY_START_HOUR ?? "9");
 
-const BOT_SCRIPT_PATH =
-  process.env.BOT_SCRIPT_PATH ||
-  path.resolve(process.cwd(), "testPrice_Dev.js");
+const CONTROL_PLANE_DIR = path.resolve(process.cwd());
+const REPO_ROOT = fs.existsSync(path.join(CONTROL_PLANE_DIR, "backend"))
+  ? CONTROL_PLANE_DIR
+  : path.resolve(CONTROL_PLANE_DIR, "..");
 
-const STRATEGIES_DIR =
-  process.env.STRATEGIES_DIR ||
-  path.join(path.dirname(path.resolve(BOT_SCRIPT_PATH)), "strategies");
-
+// Bot runner script (best guess + env override)
+const BOT_SCRIPT_CANDIDATES = [
+  process.env.BOT_SCRIPT_PATH,
+  path.join(REPO_ROOT, "backend", "testPrice_Dev.js"),
+  path.join(CONTROL_PLANE_DIR, "testPrice_Dev.js"),
+].filter(Boolean);
+let BOT_SCRIPT_PATH = BOT_SCRIPT_CANDIDATES.find((p) => p && fs.existsSync(p));
+if (!BOT_SCRIPT_PATH)
+  BOT_SCRIPT_PATH =
+    BOT_SCRIPT_CANDIDATES[0] ||
+    path.join(REPO_ROOT, "backend", "testPrice_Dev.js");
 const BACKEND_DIR = path.dirname(path.resolve(BOT_SCRIPT_PATH));
-loadEnvIfExists(path.join(path.dirname(path.resolve(STRATEGIES_DIR)), ".env"));
+
+// Strategy directories — includes ../backend/strategies explicitly
+const STRATEGY_CANDIDATE_DIRS = Array.from(
+  new Set(
+    [
+      process.env.STRATEGIES_DIR, // explicit override (recommended)
+      path.join(BACKEND_DIR, "strategies"),
+      path.join(REPO_ROOT, "backend", "strategies"), // your layout in screenshots
+      path.join(CONTROL_PLANE_DIR, "backend", "strategies"),
+      path.join(CONTROL_PLANE_DIR, "strategies"),
+      path.join(CONTROL_PLANE_DIR, "control-plane", "strategies"),
+    ]
+      .filter(Boolean)
+      .map((p) => path.resolve(p))
+  )
+);
+
+// Pull in neighboring .env if present
+loadEnvIfExists(
+  path.join(path.dirname(STRATEGY_CANDIDATE_DIRS[0] || BACKEND_DIR), ".env")
+);
 if (process.env.ENV_INCLUDE_FILES) {
-  for (const p of String(process.env.ENV_INCLUDE_FILES).split(","))
+  for (const p of String(process.env.ENV_INCLUDE_FILES).split(",")) {
     loadEnvIfExists(p.trim());
+  }
 }
 
+// Data root (next to backend by default, matches your tree)
 const BOT_DATA_ROOT =
-  process.env.BOT_DATA_ROOT || path.resolve(process.cwd(), "data");
+  process.env.BOT_DATA_ROOT || path.resolve(REPO_ROOT, "backend", "data");
 
+/* ---------------- express ---------------- */
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ------------------- Strategy discovery -------------------
-function slug(s) {
-  return String(s)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-");
-}
-function normalizeMeta(mod) {
-  const x = (mod && (mod.default ?? mod)) || {};
-  for (const c of [x, x.meta, x.strategy, x.info, x.Strategy]) {
-    if (!c) continue;
-    const n = c.name || c.strategyName || c.title;
-    const v = c.version || c.ver || c.v || c.strategyVersion;
-    const d = c.description || c.desc || "";
-    if (n && v) return { name: n, version: String(v), description: d };
-  }
-  return null;
-}
-function parseMetaFromSource(src) {
-  const head = String(src || "").slice(0, 2048);
-  const n = /name\s*:\s*['"`]([^'"`]+)['"`]/.exec(head);
-  const v = /version\s*:\s*['"`]?([0-9A-Za-z._-]+)['"`]?/.exec(head);
-  const d = /description\s*:\s*['"`]([^'"`]+)['"`]/.exec(head);
-  if (n)
-    return {
-      name: n[1],
-      version: v ? v[1] : "1.0",
-      description: d ? d[1] : "",
-    };
-  return null;
-}
-async function loadStrategyMeta(fileAbs) {
-  try {
-    const m = normalizeMeta(require(fileAbs));
-    if (m) return m;
-  } catch {}
-  try {
-    const m = normalizeMeta(
-      await import(pathToFileURL(fileAbs).href + `?t=${Date.now()}`)
-    );
-    if (m) return m;
-  } catch {}
-  try {
-    const m = parseMetaFromSource(fs.readFileSync(fileAbs, "utf8"));
-    if (m) return m;
-  } catch {}
-  return null;
-}
-async function scanStrategies() {
-  const out = [];
-  try {
-    const abs = path.resolve(STRATEGIES_DIR);
-    const files = fs
-      .readdirSync(abs)
-      .filter((f) => f.endsWith(".js"))
-      .sort();
-    for (let i = 0; i < files.length; i++) {
-      const fileAbs = path.join(abs, files[i]);
-      let meta = await loadStrategyMeta(fileAbs);
-      if (!meta) {
-        const base = path.basename(files[i], ".js");
-        meta = { name: base, version: "1.0", description: "" };
-      }
-      const id = `${slug(meta.name)}-${slug(String(meta.version))}`;
-      out.push({
-        id,
-        name: meta.name,
-        version: String(meta.version),
-        description: meta.description,
-        file: files[i],
-        choiceIndex: i + 1,
-      });
-    }
-  } catch (e) {
-    console.warn(
-      `[strategies] scan failed for ${STRATEGIES_DIR}:`,
-      e?.message || e
-    );
-  }
-  return out;
-}
-app.get("/strategies", async (_req, res) => res.json(await scanStrategies()));
-async function resolveChoiceIndexById(id) {
-  const list = await scanStrategies();
-  return list.find((s) => s.id === id)?.choiceIndex;
+/* ---------------- bot state helpers ---------------- */
+function buildInitialBotState(meta) {
+  return {
+    id: meta.id,
+    name: meta.name,
+    strategyId: meta.strategyId,
+    status: meta.status || "stopped",
+    createdAt: meta.createdAt || Date.now(),
+    config: meta.config || {},
+    symbols: meta.symbols || [],
+
+    logs: [],
+    cursor: 0,
+    buys: 0,
+    sells: 0,
+    cash: Number(process.env.INITIAL_BALANCE || 0) || 0,
+    cryptoMkt: 0,
+    locked: 0,
+    totalPL: 0,
+    bornAt: Date.now(),
+    startedAt: undefined,
+    beginningPortfolioValue: Number(process.env.INITIAL_BALANCE || 0) || 0,
+    bpvSource: "initial",
+  };
 }
 
-// ------------------- Config defaults (from .env) -------------------
+/* ---------------- strategy discovery ---------------- */
+const STRAT_FILE_EXTS = [".js", ".mjs", ".cjs"];
+
+// Known families (also used for fallback list)
 const FAMILIES = {
   "dynamic-regime-switching-1-0": [
     /^DYNAMIC_/,
@@ -208,17 +201,171 @@ const FAMILIES = {
     /^AUTO_TUNE_/,
   ],
 };
+
+function prettyNameFromId(id) {
+  const parts = String(id).split("-");
+  const ver = parts.pop() || "1.0";
+  const name = parts
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
+    .join(" ");
+  return { name, version: ver.replace(/^v/i, "") || "1.0" };
+}
+function normalizeMeta(mod) {
+  const x = (mod && (mod.default ?? mod)) || {};
+  for (const c of [x, x.meta, x.strategy, x.info, x.Strategy]) {
+    if (!c) continue;
+    const n = c.name || c.strategyName || c.title;
+    const v = c.version || c.ver || c.v || c.strategyVersion;
+    const d = c.description || c.desc || "";
+    if (n && v) return { name: n, version: String(v), description: d };
+  }
+  return null;
+}
+function parseMetaFromSource(src) {
+  const head = String(src || "").slice(0, 4096);
+  const n = /name\s*:\s*['"`]([^'"`]+)['"`]/.exec(head);
+  const v = /version\s*:\s*['"`]?([0-9A-Za-z._-]+)['"`]?/.exec(head);
+  const d = /description\s*:\s*['"`]([^'"`]+)['"`]/.exec(head);
+  if (n)
+    return {
+      name: n[1],
+      version: v ? v[1] : "1.0",
+      description: d ? d[1] : "",
+    };
+  return null;
+}
+async function loadStrategyMeta(fileAbs) {
+  try {
+    const m = normalizeMeta(require(fileAbs));
+    if (m) return m;
+  } catch (e) {}
+  try {
+    const m = normalizeMeta(
+      await import(pathToFileURL(fileAbs).href + `?t=${Date.now()}`)
+    );
+    if (m) return m;
+  } catch (e) {}
+  try {
+    const src = fs.readFileSync(fileAbs, "utf8");
+    const m = parseMetaFromSource(src);
+    if (m) return m;
+  } catch (e) {}
+  return null;
+}
+function listFilesSafe(dir) {
+  try {
+    return fs.readdirSync(dir);
+  } catch {
+    return null;
+  }
+}
+async function scanDirForStrategies(absDir, debug = false) {
+  const out = [];
+  if (!absDir) return out;
+
+  const exists = fs.existsSync(absDir);
+  const files = exists ? listFilesSafe(absDir) : null;
+  if (debug) {
+    L(
+      "strat-scan",
+      `dir=${absDir} exists=${exists} files=${files ? files.length : "n/a"}`
+    );
+  }
+  if (!exists || !files) return out;
+
+  const stratFiles = files
+    .filter((f) => STRAT_FILE_EXTS.some((ext) => f.endsWith(ext)))
+    .sort();
+  if (debug)
+    L(
+      "strat-scan",
+      `dir=${absDir} candidateStrategyFiles=${JSON.stringify(stratFiles)}`
+    );
+
+  for (let i = 0; i < stratFiles.length; i++) {
+    const fileAbs = path.join(absDir, stratFiles[i]);
+    let meta = await loadStrategyMeta(fileAbs);
+    if (!meta) {
+      const base = path.basename(stratFiles[i]).replace(/\.(m?c?)?js$/i, "");
+      meta = { name: base, version: "1.0", description: "" };
+    }
+    const id = `${slug(meta.name)}-${slug(String(meta.version))}`;
+    out.push({
+      id,
+      name: meta.name,
+      version: String(meta.version),
+      description: meta.description,
+      file: stratFiles[i],
+      choiceIndex: i + 1,
+      dir: absDir,
+    });
+  }
+  return out;
+}
+const DEFAULT_STRATEGY_LIST = Object.keys(FAMILIES).map((id, idx) => {
+  const p = prettyNameFromId(id);
+  return {
+    id,
+    name: p.name,
+    version: p.version,
+    description: "",
+    file: "(fallback)",
+    choiceIndex: idx + 1,
+    dir: "(fallback)",
+  };
+});
+async function scanStrategies(debug = false) {
+  const seen = new Set();
+  const results = [];
+  const dirsScanned = [];
+
+  const forceFallback =
+    String(process.env.STRATEGIES_FALLBACK_ONLY || "").toLowerCase() === "1";
+
+  if (!forceFallback) {
+    for (const d of STRATEGY_CANDIDATE_DIRS) {
+      const abs = path.resolve(d);
+      dirsScanned.push(abs);
+      const items = await scanDirForStrategies(abs, debug);
+      for (const s of items) {
+        if (seen.has(s.id)) continue;
+        seen.add(s.id);
+        results.push(s);
+      }
+    }
+  }
+
+  if (results.length === 0) {
+    results.push(...DEFAULT_STRATEGY_LIST);
+    if (debug)
+      L("strat-scan", "No files found; using DEFAULT_STRATEGY_LIST fallback");
+  }
+
+  L(
+    "strategies",
+    `scanned dirs=${JSON.stringify(dirsScanned)} -> found=${results.length}`
+  );
+  return results;
+}
+async function resolveChoiceIndexById(id) {
+  const list = await scanStrategies();
+  return list.find((s) => s.id === id)?.choiceIndex;
+}
+
+/* ---------------- defaults-from-env ---------------- */
 function getStrategyDefaults(strategyId) {
   const out = {};
   const upper = String(strategyId)
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "_");
   const stratPrefix = `STRAT_${upper}_`;
+
   for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith("BOTCFG_")) out[k.substring("BOTCFG_".length)] = v;
+    if (k.startsWith("BOTCFG_")) out[k.substring(7)] = v;
     else if (k.startsWith(stratPrefix))
       out[k.substring(stratPrefix.length)] = v;
   }
+
   const fam = FAMILIES[strategyId] || [];
   if (fam.length) {
     for (const [k, v] of Object.entries(process.env)) {
@@ -226,6 +373,7 @@ function getStrategyDefaults(strategyId) {
         out[k] = v;
     }
   }
+
   if (Object.keys(out).length === 0) {
     const GEN = [
       /^(SIMPLE_|GRID_|ATR_|PROFIT_LOCK_|SUPER_|ULTIMATE_|RISK_|REINVESTMENT_|DRAW_DOWN_BRAKE|CONFIRM_TICKS|MIN_HOLD_AMOUNT|defaultSlippage)/,
@@ -237,33 +385,15 @@ function getStrategyDefaults(strategyId) {
   }
   return out;
 }
-app.get("/strategies/:id/config", (req, res) =>
-  res.json({
-    strategyId: req.params.id,
-    defaults: getStrategyDefaults(req.params.id),
-  })
-);
 
-// ------------------- Bots registry -------------------
-/**
- * @type {Record<string, {
- *  id:string, name:string, status:'running'|'stopped'|'starting'|'stopping',
- *  strategyId:string, symbols:string[], config?:Record<string,any>,
- *  child?:import('child_process').ChildProcess, _sim?:any,
- *  logs:string[], cursor:number,
- *  buys:number, sells:number, cash:number, cryptoMkt:number, locked:number, totalPL:number,
- *  beginningPortfolioValue?:number, bpvSource?:'initial'|'log',
- *  startedAt?:number, bornAt:number
- * }>}
- */
+/* ---------------- in-memory bots ---------------- */
 const bots = loadAllBotsFromDisk(BOT_DATA_ROOT);
 
-const nowIso = () => new Date().toISOString();
 function pushLog(bot, line) {
   const entry = `${nowIso()}  ${line}`;
   bot.logs.push(entry);
   if (bot.logs.length > 12000) bot.logs.splice(0, bot.logs.length - 12000);
-  bot.cursor += 1;
+  bot.cursor = (bot.cursor || 0) + 1;
   try {
     const dir = path.join(BOT_DATA_ROOT, bot.id);
     ensureDir(dir);
@@ -273,10 +403,7 @@ function pushLog(bot, line) {
 function readMeta(b) {
   try {
     const p = path.join(BOT_DATA_ROOT, b.id, "meta.json");
-    if (fs.existsSync(p)) {
-      const j = JSON.parse(fs.readFileSync(p, "utf8"));
-      return j || {};
-    }
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8")) || {};
   } catch {}
   return {};
 }
@@ -311,11 +438,6 @@ function lifetimePlAveragePerDay(bot) {
   const now = Date.now();
   const days = Math.max((now - (bot.bornAt || now)) / 86400000, 1 / 24);
   return bot.totalPL / days;
-}
-function toNum(v) {
-  if (v == null) return null;
-  const n = parseFloat(String(v).replace(/[$, \t]/g, ""));
-  return Number.isFinite(n) ? n : null;
 }
 function parseRuntimeMetrics(bot, ln) {
   const mBegin = /Beginning Portfolio Value\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
@@ -367,6 +489,7 @@ function parseRuntimeMetrics(bot, ln) {
     const v = toNum(mTotal[2]);
     if (v !== null) bot.totalPL = v;
   }
+
   if (
     (!bot.beginningPortfolioValue || bot.beginningPortfolioValue === 0) &&
     typeof bot.cash === "number" &&
@@ -380,7 +503,7 @@ function parseRuntimeMetrics(bot, ln) {
   if (/(SELL executed|🔴\s*SELL|\bSELL\b)/i.test(ln)) bot.sells += 1;
 }
 
-// ------------------- Spawn real script -------------------
+/* ---------------- spawning ---------------- */
 async function resolveChoiceIndexByIdSafe(id) {
   try {
     return await resolveChoiceIndexById(id);
@@ -392,14 +515,20 @@ async function spawnReal(bot) {
   const dataDir = path.join(BOT_DATA_ROOT, bot.id);
   ensureDir(dataDir);
 
-  // Seed only once
+  // Seed holdings once
   try {
     const seededFlag = path.join(dataDir, "seeded.flag");
     if (!fs.existsSync(seededFlag)) {
       const dest = path.join(dataDir, "cryptoHoldings.json");
       const tmpl =
         process.env.TEMPLATE_HOLDINGS_FILE ||
-        path.join(BACKEND_DIR, "data", "default", "cryptoHoldings.json");
+        path.join(
+          REPO_ROOT,
+          "backend",
+          "data",
+          "default",
+          "cryptoHoldings.json"
+        );
       if (!fs.existsSync(dest) && fs.existsSync(tmpl)) {
         fs.copyFileSync(tmpl, dest);
         pushLog(bot, `[${bot.id}] seeded holdings from ${tmpl}`);
@@ -420,6 +549,7 @@ async function spawnReal(bot) {
       .replace(/^STRAT_[A-Z0-9_]+_/, "");
     cleanConfig[stripped] = v;
   }
+
   const choiceIndex = await resolveChoiceIndexByIdSafe(bot.strategyId);
   const env = {
     ...process.env,
@@ -438,6 +568,7 @@ async function spawnReal(bot) {
       cwd: BACKEND_DIR,
     });
     bot.child = child;
+
     child.stdout.on("data", (buf) => {
       const lines = buf.toString("utf8").split(/\r?\n/).filter(Boolean);
       for (const ln of lines) {
@@ -456,6 +587,7 @@ async function spawnReal(bot) {
       saveBotMeta(BOT_DATA_ROOT, bot);
     });
   } catch (e) {
+    // soft simulator
     pushLog(
       bot,
       `[${bot.id}] WARN: ${e?.message || e}. Falling back to simulator.`
@@ -490,11 +622,49 @@ async function spawnReal(bot) {
   }
 }
 
-// ------------------- Routes -------------------
+/* ---------------- router ---------------- */
 const r = express.Router();
+
+/* Health + diagnostics */
+r.get("/__ping", (_req, res) => res.json({ ok: true, t: ts() }));
+r.get("/debug/strategies", async (req, res) => {
+  const perDir = [];
+  for (const d of STRATEGY_CANDIDATE_DIRS) {
+    const abs = path.resolve(d);
+    const exists = fs.existsSync(abs);
+    const files = exists ? listFilesSafe(abs) : null;
+    perDir.push({ dir: abs, exists, files });
+  }
+  const list = await scanStrategies(true);
+  res.json({
+    candidates: STRATEGY_CANDIDATE_DIRS,
+    perDir,
+    returned: list.map((s) => ({ id: s.id, file: s.file, dir: s.dir })),
+    count: list.length,
+  });
+});
+
+/* Auth (stub) */
 r.post("/auth/logout", (_req, res) => res.json({ ok: true }));
 
-r.get("/strategies", async (_req, res) => res.json(await scanStrategies()));
+/* Strategies + defaults */
+r.get("/strategies", async (req, res) => {
+  try {
+    const list = await scanStrategies(true);
+    L(
+      "strategies",
+      `route hit from ${req.ip}; returning count=${list.length} ids=${list
+        .slice(0, 5)
+        .map((s) => s.id)
+        .join(", ")}`
+    );
+    res.json(list);
+  } catch (e) {
+    console.error("strategies route failed:", e);
+    res.json(DEFAULT_STRATEGY_LIST); // absolute fallback so UI never empties
+  }
+});
+
 r.get("/strategies/:id/config", (req, res) =>
   res.json({
     strategyId: req.params.id,
@@ -502,7 +672,7 @@ r.get("/strategies/:id/config", (req, res) =>
   })
 );
 
-// list + snapshots (single call for list screen)
+/* Bots: list + snapshots */
 r.get("/bots", (_req, res) =>
   res.json(
     Object.values(bots).map((b) => ({
@@ -519,6 +689,7 @@ r.get("/bots/snapshots", (_req, res) =>
   res.json(Object.values(bots).map((b) => buildStats(b)))
 );
 
+/* Bots: read one */
 r.get("/bots/:id", (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).json({ error: "not_found" });
@@ -532,65 +703,59 @@ r.get("/bots/:id", (req, res) => {
   });
 });
 
+/* Bots: create (hardened) */
 r.post("/bots", (req, res) => {
-  console.log("[/api/bots] POST body:", JSON.stringify(req.body));
-  const id =
-    String(req.body?.id || "").trim() ||
-    `bot-${Math.random().toString(36).slice(2, 8)}`;
-  const name = String(req.body?.name || id);
-  const strategyId = String(req.body?.strategyId || "moderate_retain_v1");
-  const config = req.body?.config || {};
-  if (bots[id]) return res.status(400).json({ error: "exists" });
-  const meta = {
-    id,
-    name,
-    strategyId,
-    status: "stopped",
-    createdAt: Date.now(),
-    config,
-  };
-  const b = (bots[id] = buildInitialBotState(meta));
-  saveBotMeta(BOT_DATA_ROOT, b);
-  res.json({ ok: true, id });
+  try {
+    L("/api/bots", "POST body:", JSON.stringify(req.body));
+    const body = req.body || {};
+    const suppliedId = String(body.id || "").trim();
+    const name = String(
+      body.name || suppliedId || `bot-${Math.random().toString(36).slice(2, 8)}`
+    );
+    const id = suppliedId || name.toLowerCase().replace(/\s+/g, "-");
+
+    if (!body.strategyId)
+      return res.status(400).json({ error: "strategyId required" });
+    if (bots[id])
+      return res.status(409).json({ error: "bot id already exists" });
+
+    let symbols = [];
+    if (Array.isArray(body.symbols)) symbols = body.symbols.map(String);
+    else if (body.config?.SYMBOLS) {
+      symbols = String(body.config.SYMBOLS)
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    const meta = {
+      id,
+      name,
+      strategyId: String(body.strategyId),
+      status: "stopped",
+      createdAt: Date.now(),
+      config: body.config || {},
+      symbols,
+    };
+    const bot = buildInitialBotState(meta);
+    bots[id] = bot;
+    pushLog(
+      bot,
+      `[${id}] created: strategy=${meta.strategyId}, symbols=${symbols.join(
+        ","
+      )}`
+    );
+    ensureDir(path.join(BOT_DATA_ROOT, id));
+    saveBotMeta(BOT_DATA_ROOT, bot);
+
+    res.json({ ok: true, id });
+  } catch (err) {
+    console.error("Create bot failed:", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
-r.post("/bots", (req, res) => {
-  const { name, strategyId, symbols, config } = req.body || {};
-  if (!name || !strategyId)
-    return res.status(400).json({ error: "name and strategyId required" });
-  const id = String(name).toLowerCase().replace(/\s+/g, "-");
-  if (bots[id]) return res.status(409).json({ error: "bot id already exists" });
-  const beginning = Number(process.env.INITIAL_BALANCE || 0) || 0;
-  const bot = {
-    id,
-    name,
-    strategyId,
-    symbols: Array.isArray(symbols) ? symbols : [],
-    config: config || {},
-    status: "stopped",
-    logs: [],
-    cursor: 0,
-    buys: 0,
-    sells: 0,
-    cash: beginning,
-    cryptoMkt: 0,
-    locked: 0,
-    totalPL: 0,
-    startedAt: undefined,
-    bornAt: Date.now(),
-    beginningPortfolioValue: beginning,
-    bpvSource: "initial",
-  };
-  bots[id] = bot;
-  pushLog(
-    bot,
-    `[${id}] created: strategy=${strategyId}, symbols=${bot.symbols.join(",")}`
-  );
-  ensureDir(path.join(BOT_DATA_ROOT, id));
-  saveBotMeta(BOT_DATA_ROOT, bot);
-  res.json({ id });
-});
-
+/* Bots: delete */
 r.delete("/bots/:id", (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).json({ error: "not_found" });
@@ -610,21 +775,22 @@ r.delete("/bots/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+/* Bots: status + lifecycle */
 r.get("/bots/:id/status", (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).json({ error: "not_found" });
   res.json({ status: b.status });
 });
-
-// idempotent start (won't double-start unless ?force=1)
 r.post("/bots/:id/start", async (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).json({ error: "not_found" });
   if (b.status === "running" && b.child && !("force" in req.query))
     return res.json({ ok: true, alreadyRunning: true });
+
   b.status = "running";
   b.startedAt = Date.now();
-  // === session reset (surgical) ===
+
+  // reset session metrics
   b.buys = 0;
   b.sells = 0;
   b.totalPL = 0;
@@ -633,13 +799,12 @@ r.post("/bots/:id/start", async (req, res) => {
   b.locked = 0;
   b.beginningPortfolioValue = 0;
   b.bpvSource = "initial";
-  // =================================
+
   pushLog(b, `[${b.id}] started`);
   await spawnReal(b);
   saveBotMeta(BOT_DATA_ROOT, b);
   res.json({ ok: true, status: b.status });
 });
-
 r.post("/bots/:id/stop", (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).json({ error: "not_found" });
@@ -661,12 +826,13 @@ r.post("/bots/:id/stop", (req, res) => {
   res.json({ ok: true, status: b.status });
 });
 
+/* Bots: logs + summaries */
 r.get("/bots/:id/logs", (req, res) => {
   const b = bots[req.params.id];
   if (!b) return res.status(404).json({ error: "not_found" });
   const since = Number(req.query.cursor || 0);
   const lines = since ? b.logs.slice(Math.max(0, since)) : b.logs.slice(-500);
-  res.json({ lines, cursor: String(b.cursor) });
+  res.json({ lines, cursor: String(b.cursor || 0) });
 });
 r.get("/bots/:id/logs.txt", (req, res) => {
   const b = bots[req.params.id];
@@ -675,7 +841,6 @@ r.get("/bots/:id/logs.txt", (req, res) => {
 });
 
 function buildStats(b) {
-  // pull persisted BPV if memory doesn't have it yet
   if (
     (b.beginningPortfolioValue == null || b.beginningPortfolioValue === 0) &&
     b.id &&
@@ -728,7 +893,7 @@ r.get("/bots/:id/portfolio", (req, res) => {
   res.json(buildStats(b));
 });
 
-app.use("/", r);
+/* ---------------- mount & lifecycle ---------------- */
 app.use("/api", r);
 
 function persistAll() {
@@ -746,9 +911,9 @@ process.on("SIGTERM", () => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Control-plane (v3.7) listening on :${PORT}`);
+  console.log(`Control-plane listening on :${PORT}`);
   ensureDir(BOT_DATA_ROOT);
-  console.log(`[strategies] DIR = ${path.resolve(STRATEGIES_DIR)}`);
+  L("strategies", "CANDIDATE DIRS =", JSON.stringify(STRATEGY_CANDIDATE_DIRS));
   console.log(`[bot] script = ${path.resolve(BOT_SCRIPT_PATH)}`);
   console.log(`[data] root   = ${path.resolve(BOT_DATA_ROOT)}`);
 });

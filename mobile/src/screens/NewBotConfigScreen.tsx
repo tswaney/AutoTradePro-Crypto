@@ -1,254 +1,208 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
-  View, Text, TextInput, FlatList, Pressable, StyleSheet, Alert,
-  ActivityIndicator, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView,
-} from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+  View,
+  Text,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  StyleSheet,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
-type StrategyMeta = { id: string; name: string; version?: string; description?: string };
-type RouteParams = { draft?: { name: string; symbols: string }; strategy?: StrategyMeta };
+const API_BASE = (process.env.EXPO_PUBLIC_API_BASE as string) || 'http://localhost:4000';
 
-// Robust defaults (simulator/device)
-const iosLocal = "http://127.0.0.1:4000";
-const androidLocal = "http://10.0.2.2:4000";
-const DEFAULT_BASE = Platform.select({ ios: iosLocal, android: androidLocal, default: "http://localhost:4000" })!;
-const API_BASE =
-  (process as any)?.env?.EXPO_PUBLIC_API_BASE ||
-  (global as any)?.EXPO_PUBLIC_API_BASE ||
-  DEFAULT_BASE;
+type Draft = {
+  name?: string;
+  symbols?: string[];   // we pass an array from NewBotScreen
+  strategyId?: string;  // preferred
+  strategy?: string;    // backward-compat
+};
 
 export default function NewBotConfigScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
-  const { draft, strategy } = (route?.params || {}) as RouteParams;
+  const draft: Draft = route?.params?.draft || {};
+
+  const log = useCallback((...a: any[]) => console.log('[NewBotConfig]', new Date().toISOString(), ...a), []);
+  log('API BASE =>', JSON.stringify(API_BASE));
+  log('route draft types', JSON.stringify({
+    draftType: typeof draft,
+    nameType: typeof draft?.name,
+    symbolsType: Array.isArray(draft?.symbols) ? 'array' : typeof draft?.symbols,
+  }));
+
+  const strategyId = useMemo(() => draft?.strategyId || draft?.strategy || '', [draft]);
+  const nameStr = String(draft?.name || '').trim() || `bot-${Math.random().toString(36).slice(2, 6)}`;
+  const symbolsStr = useMemo(() => (Array.isArray(draft?.symbols) ? draft!.symbols!.join(',') : ''), [draft]);
 
   const [loading, setLoading] = useState(false);
   const [cfg, setCfg] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(true);
 
-  // --- debug tray (starts visible) ---
-  const [showDebug, setShowDebug] = useState(true);
-  const tapsRef = useRef(0);
-  const [logs, setLogs] = useState<string[]>([]);
-  const log = (m: string, o?: any) => {
-    const s = `${new Date().toISOString()}  ${m}${o === undefined ? "" : " " + safeInspect(o)}`;
-    console.log("[NewBotConfig]", s);
-    setLogs((prev) => [s, ...prev].slice(0, 250));
-  };
+  const fetchDefaults = useCallback(async () => {
+    if (!strategyId) return;
+    setLoading(true);
+    try {
+      const url = `${API_BASE}/api/strategies/${encodeURIComponent(strategyId)}/config`;
+      log('GET defaults', JSON.stringify(url));
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      const text = await res.text();
+      log('defaults HTTP', res.status, 'len', text.length);
+      let json: any = null;
+      try { json = JSON.parse(text); } catch (e: any) { log('defaults parse error', String(e?.message || e)); }
+      const defaults = (json && json.defaults) || {};
+      // normalize to string values for TextInputs
+      const normalized: Record<string, string> = {};
+      for (const [k, v] of Object.entries(defaults)) normalized[k] = String(v);
+      setCfg(normalized);
+      log('defaults ok', JSON.stringify({ strategyId: json?.strategyId, keys: Object.keys(normalized).length }));
+    } catch (e: any) {
+      log('defaults error', String(e?.message || e));
+      setCfg({});
+    } finally {
+      setLoading(false);
+    }
+  }, [strategyId, log]);
 
-  useEffect(() => {
-    log("API BASE =>", API_BASE);
-    if (!strategy?.id) return;
-    let alive = true;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const url = `${API_BASE}/api/strategies/${encodeURIComponent(strategy.id)}/config`;
-        log("GET defaults", url);
-        const txt = await fetchWithTimeoutText(url);
-        const json = safeJSON(txt);
-        log("defaults ok", json);
-        const defaults = (json as any)?.defaults || {};
-        const str: Record<string, string> = {};
-        Object.entries(defaults).forEach(([k, v]) => (str[k] = String(v)));
-        if (alive) setCfg(str);
-      } catch (e: any) {
-        log("defaults error", e?.message || String(e));
-        setError(e?.message || String(e));
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, [strategy?.id]);
+  useEffect(() => { fetchDefaults(); }, [fetchDefaults]);
 
-  const kvPairs = useMemo(() => Object.entries(cfg), [cfg]);
-  const updateKey = (k: string, v: string) => setCfg((s) => ({ ...s, [k]: v }));
+  const update = (k: string, v: string) => setCfg(prev => ({ ...prev, [k]: v }));
 
-  const createBot = async () => {
-    log("Create Bot pressed");
-    const missing =
-      !draft?.name?.trim() ? "name" :
-      !draft?.symbols?.trim() ? "symbols" :
-      !strategy?.id ? "strategy" : "";
+  const onCreate = useCallback(async () => {
+    log('Create Bot pressed');
+    const name = String(nameStr).trim();
+    const symbols = String(symbolsStr).split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
 
-    if (missing) {
-      const msg = `Missing data: ${missing}`;
-      log("guard fail", { missing, draft, strategyId: strategy?.id });
-      Alert.alert("Missing data", msg);
+    log('coerced inputs', JSON.stringify({ nameStr: name, symbolsStr }));
+
+    if (!strategyId) {
+      log('guard fail', JSON.stringify({ miss: 'strategy' }));
+      Alert.alert('Missing data', 'Missing strategy');
       return;
     }
 
-    setSubmitting(true);
+    const payload = {
+      name,
+      strategyId,             // backend expects strategyId
+      symbols,                // array
+      config: cfg || {},      // whatever was edited or defaults
+    };
+
     try {
-      const body = {
-        name: draft!.name.trim(),
-        strategyId: strategy!.id,
-        config: { ...cfg, SYMBOLS: draft!.symbols.trim() },
-      };
-
-      // avoid stringify traps in log (BigInt/cycles)
-      log("POST /api/bots payload keys", Object.keys(body.config).length);
-
+      setSubmitting(true);
+      log('built payload', JSON.stringify({
+        name: payload.name,
+        strategyId: payload.strategyId,
+        configKeys: Object.keys(payload.config || {}).length,
+      }));
       const url = `${API_BASE}/api/bots`;
-      const { ok, status, text } = await fetchWithTimeout(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      log('fetch start', JSON.stringify(url));
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
       });
-
-      log("POST response meta", { ok, status, len: text?.length });
-
-      if (!ok) throw new Error(`HTTP ${status}: ${text?.slice(0, 200) || "no body"}`);
-
-      const json = safeJSON(text);
-      const id = (json as any)?.id || guessIdFromText(text);
-      log("parsed id", id);
-
-      if (!id) throw new Error(`Create bot response missing 'id': ${text?.slice(0, 200)}`);
-
-      Alert.alert("Bot created", `ID: ${id}`, [
-        { text: "OK", onPress: () => nav.replace("BotDetail", { id }) },
+      const text = await res.text();
+      const ok = res.ok;
+      log('fetch done', JSON.stringify({ ok, status: res.status, textLen: text.length }));
+      if (!ok) {
+        let errMsg = text;
+        try { const j = JSON.parse(text); errMsg = j?.error || errMsg; } catch {}
+        Alert.alert('Create failed', String(errMsg).slice(0, 800));
+        return;
+      }
+      log('Create success ->', text.slice(0, 180));
+      Alert.alert('Bot created', 'Your bot was created successfully.', [
+        { text: 'OK', onPress: () => nav.goBack() },
       ]);
     } catch (e: any) {
-      log("Create failed", e?.message || String(e));
-      Alert.alert("Create failed", e?.message || String(e));
+      log('Create failed', JSON.stringify(String(e?.message || e)));
+      Alert.alert('Create failed', String(e?.message || e));
     } finally {
       setSubmitting(false);
+      log('after finally', JSON.stringify({ submitting: false }));
     }
-  };
+  }, [cfg, nameStr, symbolsStr, strategyId, nav, log]);
 
-  const onTitleTap = () => {
-    tapsRef.current += 1;
-    if (tapsRef.current >= 5) {
-      setShowDebug((s) => !s);
-      tapsRef.current = 0;
-    }
-  };
+  const cfgKeys = Object.keys(cfg || {});
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#0B1117" }}>
-      <KeyboardAvoidingView behavior={Platform.select({ ios: "padding", android: undefined })} style={{ flex: 1 }}>
-        <View style={styles.container}>
-          <Text style={styles.title} onPress={onTitleTap}>Configure Strategy</Text>
-          <Text style={styles.subTitle}>
-            {strategy?.name || strategy?.id} {strategy?.version ? `v${strategy.version}` : ""}
-          </Text>
-          {!!draft && (
-            <Text style={styles.caption}>
-              Draft: <Text style={styles.bold}>{draft.name}</Text> — Symbols: {draft.symbols}
-            </Text>
-          )}
+    <ScrollView style={{ flex: 1, backgroundColor: '#0a0f1a' }} contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
+      <Text style={styles.h1}>Configure Strategy</Text>
+      <Text style={styles.note}>
+        Draft: <Text style={styles.noteBold}>{nameStr}</Text> — Symbols: <Text style={styles.noteBold}>{symbolsStr || '(none)'}</Text>
+      </Text>
 
-          {loading ? (
-            <ActivityIndicator />
-          ) : error ? (
-            <Text style={styles.error}>Failed to load defaults: {error}</Text>
-          ) : kvPairs.length === 0 ? (
-            <Text style={{ opacity: 0.7, marginTop: 8 }}>No configurable options for this strategy.</Text>
-          ) : (
-            <FlatList
-              data={kvPairs}
-              keyExtractor={([k]) => k}
-              renderItem={({ item: [k, v] }) => (
-                <View style={styles.row}>
-                  <Text style={styles.key}>{k}</Text>
-                  <TextInput
-                    value={v}
-                    onChangeText={(t) => updateKey(k, t)}
-                    style={styles.value}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType={/^[0-9.\-]+$/.test(v) ? "decimal-pad" : "default"}
-                  />
-                </View>
-              )}
-              style={{ marginTop: 8 }}
-            />
-          )}
-
-          <View style={styles.btnRow}>
-            <Pressable style={[styles.btn, styles.btnSecondary]} onPress={() => nav.goBack()}>
-              <Text style={styles.btnText}>Back</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.btn, styles.btnPrimary, submitting && { opacity: 0.7 }]}
-              disabled={submitting}
-              onPress={() => { void createBot().catch(() => {}); }}
-            >
-              <Text style={[styles.btnText, styles.btnTextPrimary]}>{submitting ? "Creating..." : "Create Bot"}</Text>
-            </Pressable>
-          </View>
-
-          {showDebug && (
-            <View style={styles.debugBox}>
-              <Text style={styles.debugTitle}>Debug</Text>
-              <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={{ paddingBottom: 6 }}>
-                {logs.map((l, i) => (
-                  <Text key={i} style={styles.debugLine}>{l}</Text>
-                ))}
-              </ScrollView>
-              <Text style={styles.debugHint}>Tap “Configure Strategy” 5× to toggle this box.</Text>
-              <Text style={styles.debugHint}>API_BASE = {API_BASE}</Text>
-            </View>
-          )}
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator />
+          <Text style={styles.loadingText}>Loading defaults…</Text>
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      ) : cfgKeys.length === 0 ? (
+        <Text style={{ color: '#94a3b8', marginTop: 12 }}>No configurable options for this strategy.</Text>
+      ) : (
+        <View style={{ marginTop: 8 }}>
+          {cfgKeys.map((k) => (
+            <View key={k} style={{ marginBottom: 12 }}>
+              <Text style={styles.label}>{k}</Text>
+              <TextInput
+                value={cfg[k]}
+                onChangeText={(v) => update(k, v)}
+                placeholder=""
+                placeholderTextColor="#64748b"
+                style={styles.input}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View style={{ flexDirection: 'row', marginTop: 16 }}>
+        <TouchableOpacity onPress={() => nav.goBack()} style={styles.secondaryBtn}>
+          <Text style={{ color: '#e5e7eb', fontWeight: '600' }}>Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onCreate} disabled={submitting} style={[styles.primaryBtn, submitting && { opacity: 0.6 }]}>
+          <Text style={{ color: 'white', fontWeight: '700' }}>{submitting ? 'Creating…' : 'Create Bot'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Debug box (tap title to toggle) */}
+      <TouchableOpacity onPress={() => setDebugOpen((x) => !x)} style={{ marginTop: 16 }}>
+        <Text style={{ color: '#60a5fa', fontWeight: '600' }}>{debugOpen ? 'Hide' : 'Show'} Debug</Text>
+      </TouchableOpacity>
+      {debugOpen && (
+        <View style={styles.debugBox}>
+          <Text style={styles.debugText}>Tap “Configure Strategy” 5× to toggle.</Text>
+          <Text style={styles.debugText}>API_BASE = {API_BASE}</Text>
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
-/* -------- helpers -------- */
-function safeJSON(t?: string) { try { return t ? JSON.parse(t) : {}; } catch { return {}; } }
-function guessIdFromText(t?: string) {
-  if (!t) return null;
-  const m = /"id"\s*:\s*"([^"]+)"/.exec(t) || /id[:=]\s*([A-Za-z0-9._-]+)/.exec(t);
-  return m?.[1] || null;
-}
-function safeInspect(o: any) {
-  try { return JSON.stringify(o); } catch { return String(o); }
-}
-async function fetchWithTimeoutText(url: string, ms = 10000) {
-  const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), ms);
-  try { const r = await fetch(url, { signal: ctrl.signal }); const t = await r.text();
-        if (!r.ok) throw new Error(`HTTP ${r.status}: ${t?.slice(0, 200) || "no body"}`); return t; }
-  finally { clearTimeout(to); }
-}
-async function fetchWithTimeout(url: string, init?: RequestInit, ms = 10000) {
-  const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), ms);
-  try { const r = await fetch(url, { ...(init || {}), signal: ctrl.signal });
-        const t = await r.text().catch(() => ""); return { ok: r.ok, status: r.status, text: t }; }
-  finally { clearTimeout(to); }
-}
-
-/* -------- styles -------- */
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 10, backgroundColor: "#0B1117" },
-  title: { fontSize: 22, fontWeight: "600", color: "#E6EDF3" },
-  subTitle: { fontSize: 16, opacity: 0.85, color: "#E6EDF3" },
-  caption: { fontSize: 13, opacity: 0.75, marginTop: 2, color: "#97A3B6" },
-  bold: { fontWeight: "600" },
-  row: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 6 },
-  key: { flex: 0.9, fontSize: 13, opacity: 0.85, color: "#E6EDF3" },
-  value: {
-    flex: 1.1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 8, backgroundColor: "rgba(127,127,127,0.07)",
-    fontSize: 15, color: "#E6EDF3",
+  h1: { color: '#e5e7eb', fontSize: 22, fontWeight: '700' },
+  note: { color: '#9aa4b2', marginTop: 6 },
+  noteBold: { color: '#e5e7eb', fontWeight: '700' },
+  label: { color: '#9aa4b2', marginBottom: 6 },
+  input: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#243447',
+    backgroundColor: '#0d1117',
+    color: '#cbd5e1',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  btnRow: { flexDirection: "row", gap: 10, marginTop: 12 },
-  btn: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth },
-  btnPrimary: { backgroundColor: "#4C82F7", borderColor: "#4C82F7" },
-  btnSecondary: {},
-  btnText: { fontSize: 16, color: "#E6EDF3" },
-  btnTextPrimary: { color: "white" },
-  error: { color: "#f55", marginVertical: 6 },
-  debugBox: {
-    marginTop: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: "#2A3340",
-    borderRadius: 10, padding: 10, backgroundColor: "#0E131A",
-  },
-  debugTitle: { color: "#E6EDF3", fontWeight: "700", marginBottom: 6 },
-  debugLine: { color: "#9DB0C5", fontSize: 12, marginBottom: 2 },
-  debugHint: { color: "#6E7E94", fontSize: 11, marginTop: 4 },
+  loadingBox: { borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#2a2f3a', backgroundColor: '#0d1117', alignItems: 'center', marginTop: 12 },
+  loadingText: { color: '#9aa4b2', marginTop: 8 },
+  secondaryBtn: { flex: 1, marginRight: 8, borderRadius: 12, paddingVertical: 14, alignItems: 'center', backgroundColor: '#111827', borderWidth: 1, borderColor: '#1f2937' },
+  primaryBtn: { flex: 1, marginLeft: 8, backgroundColor: '#1f6feb', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  debugBox: { borderRadius: 12, borderWidth: 1, borderColor: '#2a2f3a', backgroundColor: '#0b1220', padding: 10, marginTop: 8 },
+  debugText: { color: '#94a3b8', fontSize: 12 },
 });

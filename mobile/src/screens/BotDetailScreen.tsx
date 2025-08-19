@@ -1,351 +1,302 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import * as SecureStore from 'expo-secure-store';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
-import LogViewer from '../components/LogViewer';
-import SummaryBlock, { Summary } from '../components/SummaryBlock';
-import HeaderActions from '../components/HeaderActions';
-import { apiDelete, apiGet, apiPost, logout as apiLogout } from '../../api';
+const API_BASE = (process.env.EXPO_PUBLIC_API_BASE as string) || 'http://localhost:4000';
 
-type Props = { route: { params: { botId: string; botName?: string } } };
-const SIGNED_KEY = 'autotradepro.signedIn';
-
-// remove ANSI codes
-const stripAnsi = (s: string) => s.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
-
-export default function BotDetailScreen({ route }: Props) {
-  const navigation = useNavigation<any>();
-  const { botId, botName } = route.params;
-
-  const [status, setStatus] = useState<'running'|'stopped'|'starting'|'stopping'|'unknown'>('unknown');
-  const [busy, setBusy] = useState(false);
-  const [follow, setFollow] = useState(true);
-  const [unread, setUnread] = useState(0);
-  const [lines, setLines] = useState<string[]>([]);
-  const [summary, setSummary] = useState<Summary | undefined>(undefined);
-
-  // Gates
-  const [bpvReady, setBpvReady] = useState(false);        // keep BPV at 0 until startup summary
-  const [tradeReady, setTradeReady] = useState(false);    // hide buys/sells until “Initial cycle complete”
-
-  // internals
-  const summaryPath = useRef<string | null>(null);
-  const logPath = useRef<string | null>(null);
-  const lastLen = useRef(0);
-
-  // locked monotonic accumulation
-  const baseLockedRef = useRef<number>(0);
-  const lockedDeltaRef = useRef<number>(0);
-
-  useEffect(() => {
-    navigation.setOptions({
-      headerBackTitle: 'Bot List',
-      headerLeft: () => (
-        <TouchableOpacity onPress={() => navigation.navigate('Home')} style={{ paddingHorizontal: 8 }}>
-          <Text style={{ color: '#7AA5FF', fontWeight: '600' }}>{'‹  Bot List'}</Text>
-        </TouchableOpacity>
-      ),
-      headerRight: () => (
-        <HeaderActions
-          onRefresh={() => { refreshStatus(); refreshSummary(); pollLogs(); }}
-          onSignOut={async () => {
-            try { await apiLogout(); } catch {}
-            await SecureStore.deleteItemAsync(SIGNED_KEY);
-            navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-          }}
-        />
-      ),
-    });
-  }, [navigation]);
-
-  // ------------ helpers ------------
-  const normalizeStatus = (s: any) => {
-    const t = String(s?.status ?? s ?? '').toLowerCase();
-    if (t.includes('running') || t === 'true') return 'running';
-    if (t.includes('starting')) return 'starting';
-    if (t.includes('stopping')) return 'stopping';
-    if (t.includes('stopped') || t === 'false') return 'stopped';
-    return 'unknown';
-  };
-
-  const pickNum = (obj: any, ...keys: string[]) => {
-    for (const k of keys) {
-      const v = obj?.[k];
-      if (v == null) continue;
-      const n = typeof v === 'string' ? Number(String(v).replace(/[$,]/g, '')) : Number(v);
-      if (Number.isFinite(n)) return n;
-    }
-    return undefined;
-  };
-
-  const normalizeSummary = (r: any): Summary => ({
-    beginningPortfolioValue: pickNum(r, 'beginningPortfolioValue','begin','startValue','startingBalance','beginValue'),
-    duration: r?.duration ?? r?.uptime ?? r?.elapsed ?? r?.runtime,
-    buys: r?.buys ?? r?.buyCount ?? r?.tradesBuy ?? r?.totalBuys,
-    sells: r?.sells ?? r?.sellCount ?? r?.tradesSell ?? r?.totalSells,
-    totalPL: pickNum(r, 'totalPL','totalPnL','pnl','pl','profitTotal','pnlTotal'),
-    pl24h: pickNum(r, 'pl24h','pnl24h','dailyPL','pl_24h'),
-    avgDailyPL: pickNum(r, 'avgDailyPL','avgPLPerDay','avgProfitPerDay'),
-    cash: pickNum(r, 'cash','balance','free'),
-    cryptoMkt: pickNum(r, 'cryptoMkt','crypto','marketValue','cryptoMarketValue','equity','holdingsValue','portfolioCryptoValue'),
-    locked: pickNum(r, 'locked','margin','held','profitLocked'),
-  });
-
-  const ensureCryptoFallback = (s: Summary): Summary => {
-  const hasCrypto = s.cryptoMkt != null && Number.isFinite(s.cryptoMkt as any);
-  const hasBegin = Number.isFinite(s.beginningPortfolioValue as any);
-  const hasPl = Number.isFinite(s.totalPL as any);
-  const cash = Number.isFinite(s.cash as any) ? (s.cash as number) : 0; // assume 0 if unknown
-  const locked = Number.isFinite(s.locked as any) ? (s.locked as number) : 0;
-  if (!hasCrypto && hasBegin && hasPl) {
-    const crypto = (s.beginningPortfolioValue as number) + (s.totalPL as number) - cash - locked;
-    return { ...s, cryptoMkt: Math.max(0, Number.isFinite(crypto) ? Number(crypto) : 0) };
-  }
-  return s;
+type BotMeta = {
+  id: string;
+  name: string;
+  status: 'running' | 'stopped' | string;
+  strategyId?: string;
+  symbols?: string[];
+  config?: Record<string, any>;
 };
 
-  // ------------ API polls ------------
-  const refreshStatus = async () => {
-    try { const s = await apiGet(`/bots/${botId}/status`); setStatus(normalizeStatus(s)); } catch {}
-  };
+type Summary = {
+  id: string;
+  name: string;
+  status: string;
+  beginningPortfolioValue: number;
+  bpvSource?: string;
+  duration: string;
+  buys: number;
+  sells: number;
+  totalPL: number;
+  cash: number;
+  cryptoMkt: number;
+  locked: number;
+  currentPortfolioValue: number;
+  pl24h: number;
+  avgDailyPL: number;
+};
 
-  const refreshSummary = async () => {
-    const tryGet = async (u: string) => { try { return await apiGet(u); } catch { return undefined; } };
-    const urls = summaryPath.current ? [summaryPath.current] :
-      [`/bots/${botId}/summary`, `/bots/${botId}/portfolio`, `/bots/${botId}/stats`, `/bots/${botId}/metrics`];
-    for (const u of urls) {
-      const r = await tryGet(u);
-      if (r != null) {
-        summaryPath.current = u;
-        const norm = normalizeSummary(r);
-        // remember initial locked (for monotonic accumulation)
-        if (baseLockedRef.current === 0 && Number.isFinite(norm.locked)) baseLockedRef.current = Number(norm.locked);
-        setSummary(ensureCryptoFallback(norm));
-        return;
-      }
+export default function BotDetailScreen() {
+  const nav = useNavigation<any>();
+  const route = useRoute<any>();
+  const botId: string | undefined = route?.params?.id;
+
+  const [loading, setLoading] = useState(false);
+  const [meta, setMeta] = useState<BotMeta | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [cursor, setCursor] = useState<number>(0);
+  const [freeze, setFreeze] = useState<boolean>(false);
+  const [busy, setBusy] = useState<boolean>(false);
+
+  const log = useCallback((...a: any[]) => console.log('[BotDetail]', new Date().toISOString(), ...a), []);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const idSafe = useMemo(() => String(botId || meta?.id || '').trim(), [botId, meta]);
+
+  const fetchJson = useCallback(async (url: string) => {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const text = await res.text();
+    let json: any = null;
+    try { json = JSON.parse(text); } catch (e: any) {
+      throw new Error(`Failed to parse JSON from ${url}: ${String(e?.message || e)} (len=${text.length})`);
     }
-  };
-
-  // ------------ log parsing ------------
-  const toNum = (s: string) => {
-    const n = Number(s.replace(/,/g, ''));
-    return Number.isFinite(n) ? n : undefined;
-  };
-
-  const parseIncremental = (inc: string[]) => {
-    const L = inc.map(stripAnsi);
-
-    // “startup summary” gate for BPV
-    if (!bpvReady && (L.some(l => /STARTUP SUMMARY/i.test(l)) || L.some(l => /Beginning Portfolio Value:\s*\$/i.test(l)))) {
-      setBpvReady(true);
-    }
-
-    // “trading enabled” gate for buys/sells stabilization
-    if (!tradeReady && L.some(l => /Initial cycle complete — trading now enabled/i.test(l))) {
-      setTradeReady(true);
-    }
-
-    // accumulate locked deltas (never decrease)
-    let lockedAdd = 0;
-    for (const l of L) {
-      // per-trade lock delta on SELL executed
-      const m1 = l.match(/SELL executed:.*?Locked:\s*\$([-\d.,]+)/i);
-      if (m1) lockedAdd += toNum(m1[1]) ?? 0;
-
-      // daily/threshold profit lock line
-      const m2 = l.match(/PROFIT LOCKED:\s*\$([-\d.,]+)\s*moved to locked cash/i);
-      if (m2) lockedAdd += toNum(m2[1]) ?? 0;
-    }
-    if (lockedAdd > 0) {
-      lockedDeltaRef.current += lockedAdd;
-      setSummary(prev => {
-        const base = prev?.locked ?? baseLockedRef.current;
-        const nextLocked = (Number(base) || 0) + lockedDeltaRef.current;
-        const next = { ...(prev || {}), locked: nextLocked };
-        return ensureCryptoFallback(next);
-      });
-    }
-
-    // cash (rare in your latest logs, but keep support)
-    for (let i = L.length - 1; i >= 0; i--) {
-      const lc = L[i];
-      const mc = lc.match(/Cash:\s*\$([-\d.,]+)/i);
-      if (mc) {
-        const cash = toNum(mc[1]);
-        if (cash != null) {
-          setSummary(prev => ensureCryptoFallback({ ...(prev || {}), cash }));
-        }
-        break;
-      }
-    }
-
-    // crypto market value (multiple variants)
-    const cryptoRegexes = [
-      /Crypto\s*\(mkt\)\s*:\s*\$([-\d.,]+)/i,
-      /Crypto\s*:\s*\$([-\d.,]+)/i,
-      /Market\s*Value\s*:\s*\$([-\d.,]+)/i,
-      /Equity\s*:\s*\$([-\d.,]+)/i,
-      /Holdings\s*:\s*\$([-\d.,]+)/i,
-    ];
-    outer: for (let i = L.length - 1; i >= 0; i--) {
-      for (const rx of cryptoRegexes) {
-        const mm = L[i].match(rx);
-        if (mm) {
-          const crypto = toNum(mm[1]);
-          if (crypto != null) {
-            setSummary(prev => ({ ...(prev || {}), cryptoMkt: crypto }));
-          }
-          break outer;
-        }
-      }
-    }
-
-    // total P/L (latest)
-    for (let i = L.length - 1; i >= 0; i--) {
-      const mp = L[i].match(/(?:^|\s)P\/L\s*\$([-\d.,]+)/i) || L[i].match(/Total\s*P\/L\s*:\s*\$([-\d.,]+)/i);
-      if (mp) {
-        const totalPL = toNum(mp[1]);
-        if (totalPL != null) setSummary(prev => ensureCryptoFallback({ ...(prev || {}), totalPL }));
-        break;
-      }
-    }
-  };
-
-  const pollLogs = async () => {
-    const tryGet = async (u: string) => { try { return await apiGet<any>(u); } catch { return undefined; } };
-    const urls = logPath.current ? [logPath.current] : [`/bots/${botId}/logs`, `/bots/${botId}/log`, `/bots/${botId}/stdout`];
-
-    for (const u of urls) {
-      const res = await tryGet(u);
-      if (res == null) continue;
-
-      logPath.current = u;
-      let next: string[] = [];
-      if (typeof res === 'string') next = res.split(/\r?\n/).filter(Boolean);
-      else if (Array.isArray(res?.lines)) next = res.lines.filter(Boolean);
-      else if (typeof res?.text === 'string') next = res.text.split(/\r?\n/).filter(Boolean);
-
-      if (!next.length) return;
-
-      // incremental section
-      const inc = next.slice(lastLen.current);
-      lastLen.current = next.length;
-
-      setLines(next);
-      if (!follow && inc.length > 0) setUnread((u) => u + inc.length);
-
-      parseIncremental(inc);
-      return;
-    }
-  };
-
-  // ------------ lifecycle ------------
-  useFocusEffect(useCallback(() => { refreshStatus(); refreshSummary(); pollLogs(); }, []));
-  useEffect(() => {
-    const iv1 = setInterval(refreshStatus, 1200);
-    const iv2 = setInterval(pollLogs, 800);
-    const iv3 = setInterval(refreshSummary, 5000);
-    return () => { clearInterval(iv1); clearInterval(iv2); clearInterval(iv3); };
+    return { res, json };
   }, []);
 
-  // ------------ actions ------------
-  const start = async () => {
-    setBusy(true);
+  const loadMeta = useCallback(async () => {
+    if (!idSafe) return;
+    log('GET meta', `${API_BASE}/api/bots/${idSafe}`);
     try {
-      await apiPost(`/bots/${botId}/start`);
-      setStatus('starting');
-      setFollow(true);
-      setUnread(0);
-      await refreshStatus();
-    } finally { setBusy(false); }
-  };
-
-  const ensureStopped = async (ms = 10000) => {
-    const t0 = Date.now();
-    while (Date.now() - t0 < ms) {
-      const s = await apiGet(`/bots/${botId}/status`).catch(() => null);
-      if (s && normalizeStatus(s) === 'stopped') return true;
-      await new Promise(r => setTimeout(r, 400));
-    }
-    return false;
-  };
-
-  const stop = async () => {
-    setBusy(true);
-    try {
-      await apiPost(`/bots/${botId}/stop`);
-      setStatus('stopping');
-      const ok = await ensureStopped();
-      if (!ok) Alert.alert('Note', 'Stop request sent; waiting for the process to exit.');
-      await refreshStatus();
-    } finally { setBusy(false); }
-  };
-
-  const del = async () => {
-    if (status === 'running' || status === 'starting') return Alert.alert('Stop the bot before deleting.');
-    setBusy(true);
-    try {
-      await apiDelete(`/bots/${botId}`);
-      Alert.alert('Deleted');
-      navigation.navigate('Home');
+      const { res, json } = await fetchJson(`${API_BASE}/api/bots/${idSafe}`);
+      log('meta status', res.status);
+      if (res.ok) setMeta(json as BotMeta);
+      else throw new Error(`HTTP ${res.status}`);
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Delete failed');
-    } finally { setBusy(false); }
-  };
+      log('meta error', String(e?.message || e));
+      setMeta(null);
+    }
+  }, [idSafe, fetchJson, log]);
 
-  const isRunning = status === 'running' || status === 'starting';
+  const loadSummary = useCallback(async () => {
+    if (!idSafe) return;
+    log('GET summary', `${API_BASE}/api/bots/${idSafe}/summary`);
+    try {
+      const { res, json } = await fetchJson(`${API_BASE}/api/bots/${idSafe}/summary`);
+      log('summary status', res.status);
+      if (res.ok) setSummary(json as Summary);
+      else throw new Error(`HTTP ${res.status}`);
+    } catch (e: any) {
+      log('summary error', String(e?.message || e));
+      setSummary(null);
+    }
+  }, [idSafe, fetchJson, log]);
 
-  // hide buys/sells until “trading now enabled”
-  const displaySummary: Summary | undefined = summary
-    ? { ...summary, buys: tradeReady ? summary.buys : 0, sells: tradeReady ? summary.sells : 0 }
-    : undefined;
+  const loadLogs = useCallback(async () => {
+    if (!idSafe) return;
+    const url = `${API_BASE}/api/bots/${idSafe}/logs?cursor=${cursor}`;
+    log('GET logs', url);
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      const text = await res.text();
+      let json: any = null;
+      try { json = JSON.parse(text); } catch (e: any) {
+        log('logs parse error', String(e?.message || e));
+        return;
+      }
+      const lines: string[] = Array.isArray(json?.lines) ? json.lines : [];
+      const nextCursor = Number(json?.cursor || 0);
+      setCursor(nextCursor);
+      if (lines.length) {
+        setLogs(prev => [...prev, ...lines]);
+        if (!freeze) {
+          requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+        }
+      }
+      log('logs got', lines.length, 'cursor', nextCursor);
+    } catch (e: any) {
+      log('logs error', String(e?.message || e));
+    }
+  }, [idSafe, cursor, freeze, log]);
+
+  const refreshAll = useCallback(async () => {
+    if (!idSafe) return;
+    setLoading(true);
+    try {
+      await loadMeta();
+      await loadSummary();
+      await loadLogs();
+    } catch (e: any) {
+      // everything is already caught; this is just a belt-and-suspenders guard
+      log('refreshAll caught', String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }, [idSafe, loadMeta, loadSummary, loadLogs, log]);
+
+  useEffect(() => {
+    if (!idSafe) {
+      Alert.alert('No bot id', 'This screen requires a bot id.');
+      return;
+    }
+    log('API_BASE =>', JSON.stringify(API_BASE), 'id=', idSafe);
+    refreshAll().catch(err => log('initial refresh err', String(err)));
+    // Optional: small poll to keep summary live (stop when frozen)
+    const t = setInterval(() => { loadSummary().catch(() => {}); }, 5000);
+    return () => clearInterval(t);
+  }, [idSafe, refreshAll, loadSummary, log]);
+
+  const doStart = useCallback(async () => {
+    if (!idSafe) return;
+    try {
+      setBusy(true);
+      log('POST start', `${API_BASE}/api/bots/${idSafe}/start`);
+      const res = await fetch(`${API_BASE}/api/bots/${idSafe}/start`, { method: 'POST' });
+      const text = await res.text();
+      log('start done', res.status, text.slice(0, 120));
+      if (!res.ok) Alert.alert('Start failed', text.slice(0, 800));
+      await refreshAll();
+    } catch (e: any) {
+      log('start error', String(e?.message || e));
+      Alert.alert('Start failed', String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [idSafe, refreshAll, log]);
+
+  const doStop = useCallback(async () => {
+    if (!idSafe) return;
+    try {
+      setBusy(true);
+      log('POST stop', `${API_BASE}/api/bots/${idSafe}/stop`);
+      const res = await fetch(`${API_BASE}/api/bots/${idSafe}/stop`, { method: 'POST' });
+      const text = await res.text();
+      log('stop done', res.status, text.slice(0, 120));
+      if (!res.ok) Alert.alert('Stop failed', text.slice(0, 800));
+      await refreshAll();
+    } catch (e: any) {
+      log('stop error', String(e?.message || e));
+      Alert.alert('Stop failed', String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [idSafe, refreshAll, log]);
+
+  const doDelete = useCallback(async () => {
+    if (!idSafe) return;
+    Alert.alert('Delete Bot', 'This will delete the bot and its data. Continue?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setBusy(true);
+            log('DELETE bot', `${API_BASE}/api/bots/${idSafe}`);
+            const res = await fetch(`${API_BASE}/api/bots/${idSafe}`, { method: 'DELETE' });
+            const text = await res.text();
+            log('delete done', res.status, text.slice(0, 120));
+            if (!res.ok) {
+              Alert.alert('Delete failed', text.slice(0, 800));
+            } else {
+              Alert.alert('Deleted', 'Bot deleted.', [{ text: 'OK', onPress: () => nav.goBack() }]);
+            }
+          } catch (e: any) {
+            log('delete error', String(e?.message || e));
+            Alert.alert('Delete failed', String(e?.message || e));
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  }, [idSafe, nav, log]);
+
+  const statusText = meta?.status || summary?.status || 'unknown';
+  const bpv = summary?.beginningPortfolioValue ?? null;
+  const cur = summary?.currentPortfolioValue ?? null;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0B1117' }}>
-      <View style={styles.card}>
-        <Text style={styles.title}>{botName || botId}</Text>
-        <Text style={styles.meta}>Status: {status}</Text>
-        <View style={[styles.row, { marginTop: 8 }]}>
-          <Pill label="Start" disabled={busy || isRunning} onPress={start} kind="primary" />
-          <Pill label="Stop"  disabled={busy || !isRunning} onPress={stop}  kind="danger" />
-          <Pill label={follow ? 'Freeze' : 'Unfreeze'} onPress={() => { setFollow(!follow); if (follow) setUnread(0); }} />
-          <Pill label="Jump to latest" onPress={() => { setFollow(true); setUnread(0); }} />
-          <Pill label="Delete" disabled={busy || isRunning} onPress={del} />
-          {!follow && unread > 0 && <Text style={styles.unread}>+{unread}</Text>}
+    <View style={{ flex: 1, backgroundColor: '#0a0f1a' }}>
+      {/* Header row */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => nav.goBack()}><Text style={styles.link}>&lt; Bot List</Text></TouchableOpacity>
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity onPress={() => refreshAll()}><Text style={styles.link}>Refresh</Text></TouchableOpacity>
+          <Text style={{ color: '#334155' }}>{'  '}</Text>
+          <TouchableOpacity onPress={() => nav.navigate('SignIn')}><Text style={styles.link}>Sign out</Text></TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
+        {/* Status + actions */}
+        <View style={styles.card}>
+          <Text style={styles.statusLine}>Status: <Text style={{ color: '#e5e7eb' }}>{statusText}</Text></Text>
+          <View style={{ flexDirection: 'row', marginTop: 8 }}>
+            <TouchableOpacity disabled={busy} style={styles.btnPrimary} onPress={doStart}><Text style={styles.btnPrimaryText}>Start</Text></TouchableOpacity>
+            <TouchableOpacity disabled={busy} style={styles.btn} onPress={doStop}><Text style={styles.btnText}>Stop</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.btn} onPress={() => setFreeze(f => !f)}><Text style={styles.btnText}>{freeze ? 'Unfreeze' : 'Freeze'}</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.btn} onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}><Text style={styles.btnText}>Jump to latest</Text></TouchableOpacity>
+          </View>
+          <TouchableOpacity disabled={busy} style={styles.btnDanger} onPress={doDelete}><Text style={styles.btnDangerText}>Delete</Text></TouchableOpacity>
         </View>
 
-        <SummaryBlock s={displaySummary} showPlaceholder bpvReady={bpvReady} />
-      </View>
+        {/* Portfolio Summary */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Total Portfolio Summary</Text>
+          {loading && <ActivityIndicator style={{ marginTop: 8 }} />}
+          <View style={styles.row}><Text style={styles.key}>Beginning Portfolio Value</Text><Text style={styles.val}>{bpv == null ? '—' : `$${bpv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</Text></View>
+          <View style={styles.row}><Text style={styles.key}>Duration</Text><Text style={styles.val}>{summary?.duration ?? '—'}</Text></View>
+          <View style={styles.row}><Text style={styles.key}>Buys</Text><Text style={styles.val}>{summary?.buys ?? 0}</Text></View>
+          <View style={styles.row}><Text style={styles.key}>Sells</Text><Text style={styles.val}>{summary?.sells ?? 0}</Text></View>
+          <View style={styles.row}><Text style={styles.key}>Total P/L</Text><Text style={styles.val}>{summary?.totalPL == null ? '—' : `$${summary.totalPL.toFixed(2)}`}</Text></View>
+          <View style={styles.row}><Text style={styles.key}>Cash</Text><Text style={styles.val}>{summary?.cash == null ? '—' : `$${summary.cash.toFixed(2)}`}</Text></View>
+          <View style={styles.row}><Text style={styles.key}>Crypto (mkt)</Text><Text style={styles.val}>{summary?.cryptoMkt == null ? '—' : `$${summary.cryptoMkt.toFixed(2)}`}</Text></View>
+          <View style={styles.row}><Text style={styles.key}>Locked</Text><Text style={styles.val}>{summary?.locked == null ? '—' : `$${summary.locked.toFixed(2)}`}</Text></View>
+          <View style={styles.row}><Text style={[styles.key, { fontWeight: '700' }]}>Current Portfolio Value</Text><Text style={[styles.val, { fontWeight: '800' }]}>{cur == null ? '$0.00' : `$${cur.toFixed(2)}`}</Text></View>
+        </View>
 
-      <View style={{ paddingHorizontal: 12, marginTop: 12 }}>
-        <LogViewer lines={lines.map(stripAnsi)} follow={follow} />
-      </View>
-    </SafeAreaView>
-  );
-}
-
-function Pill({ label, onPress, disabled, kind }:{
-  label:string; onPress?:()=>void; disabled?:boolean; kind?:'primary'|'danger'
-}) {
-  return (
-    <TouchableOpacity disabled={disabled} onPress={onPress}
-      style={[styles.pill, disabled?styles.pillDisabled:(kind==='danger'?styles.danger:kind==='primary'?styles.primary:styles.ghost)]}>
-      <Text style={styles.pillText}>{label}</Text>
-    </TouchableOpacity>
+        {/* Logs */}
+        <View style={[styles.card, { minHeight: 160 }]}>
+          <Text style={styles.cardTitle}>Logs</Text>
+          <ScrollView ref={scrollRef} style={{ marginTop: 8, maxHeight: 320 }}>
+            {logs.length === 0 ? (
+              <Text style={{ color: '#64748b' }}>No logs yet.</Text>
+            ) : (
+              logs.map((ln, idx) => (
+                <Text key={idx} style={{ color: '#9aa4b2', fontSize: 12, marginBottom: 2 }}>{ln}</Text>
+              ))
+            )}
+          </ScrollView>
+          <View style={{ flexDirection: 'row', marginTop: 8 }}>
+            <TouchableOpacity style={styles.btn} onPress={() => loadLogs().catch(() => {})}><Text style={styles.btnText}>Load more</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.btn} onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}><Text style={styles.btnText}>Jump to latest</Text></TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: 1, borderColor: '#2A3340', borderRadius: 16, padding: 14, backgroundColor: '#11161C', margin: 12 },
-  title: { fontSize: 16, fontWeight: '700', color: '#E6EDF3' },
-  meta: { marginTop: 2, color: '#97A3B6' },
-  row: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
-  pill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginRight: 8, marginTop: 6, borderWidth: 1, borderColor: '#2A3340' },
-  pillText: { fontWeight: '600', color: '#E6EDF3' },
-  pillDisabled: { backgroundColor: '#1D2631', opacity: 0.6 },
-  primary: { backgroundColor: '#0E2B5E' },
-  danger: { backgroundColor: '#3A1111' },
-  ghost: { backgroundColor: '#1A1F28' },
-  unread: { color: '#7AA5FF', fontWeight: '700', marginLeft: 6, marginTop: 8 },
+  header: { paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  link: { color: '#60a5fa', fontWeight: '600' },
+
+  card: { borderRadius: 14, borderWidth: 1, borderColor: '#2a2f3a', backgroundColor: '#0b1220', padding: 12, marginBottom: 12 },
+  cardTitle: { color: '#e5e7eb', fontWeight: '700', marginBottom: 8 },
+  statusLine: { color: '#9aa4b2' },
+
+  btn: { backgroundColor: '#111827', borderColor: '#1f2937', borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, marginRight: 8 },
+  btnText: { color: '#e5e7eb', fontWeight: '600' },
+  btnPrimary: { backgroundColor: '#1f6feb', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 14, marginRight: 8 },
+  btnPrimaryText: { color: 'white', fontWeight: '700' },
+  btnDanger: { backgroundColor: '#3f1d1d', borderColor: '#7f1d1d', borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, marginTop: 8, alignSelf: 'flex-start' },
+  btnDangerText: { color: '#fecaca', fontWeight: '700' },
+
+  row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  key: { color: '#9aa4b2' },
+  val: { color: '#e5e7eb' },
 });
