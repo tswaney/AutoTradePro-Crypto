@@ -1,5 +1,5 @@
 // control-plane/src/index.js
-// v8 — deep logging for strategy discovery + diagnostics endpoint
+// v9 — summary fixes: strict executed trade counts, profit-lock fallback, crypto(mkt) from holdings+prices
 
 import express from "express";
 import cors from "cors";
@@ -19,7 +19,6 @@ const ts = () => new Date().toISOString();
 function L(tag, ...args) {
   console.log(`[${tag}] ${ts()}`, ...args);
 }
-
 function loadEnvIfExists(p) {
   try {
     if (p && fs.existsSync(p)) {
@@ -37,6 +36,10 @@ function toNum(v) {
   if (v == null) return null;
   const n = parseFloat(String(v).replace(/[$, \t]/g, ""));
   return Number.isFinite(n) ? n : null;
+}
+function money(v) {
+  const n = toNum(v);
+  return n == null ? 0 : n;
 }
 
 /* ---------------- config & paths ---------------- */
@@ -238,18 +241,18 @@ async function loadStrategyMeta(fileAbs) {
   try {
     const m = normalizeMeta(require(fileAbs));
     if (m) return m;
-  } catch (e) {}
+  } catch {}
   try {
     const m = normalizeMeta(
       await import(pathToFileURL(fileAbs).href + `?t=${Date.now()}`)
     );
     if (m) return m;
-  } catch (e) {}
+  } catch {}
   try {
     const src = fs.readFileSync(fileAbs, "utf8");
     const m = parseMetaFromSource(src);
     if (m) return m;
-  } catch (e) {}
+  } catch {}
   return null;
 }
 function listFilesSafe(dir) {
@@ -418,11 +421,11 @@ function computePl24h(bot) {
     if (!t) continue;
     const when = new Date(t);
     if (!isFinite(when.getTime()) || when < anchor) continue;
-    const mm = /P\/L\s*\$([0-9.,-]+)/i.exec(line);
-    if (mm) {
-      const v = parseFloat(mm[1].replace(/,/g, ""));
-      if (!Number.isNaN(v)) sum += v;
-    }
+    // Accept both "P/L $X" and "PROFIT LOCKED: $X moved ..."
+    const m1 = /P\/L\s*\$([0-9.,-]+)/i.exec(line);
+    const m2 = /PROFIT LOCKED:\s*\$([0-9.,-]+)/i.exec(line);
+    if (m1) sum += money(m1[1]);
+    if (m2) sum += money(m2[1]);
   }
   return { pl24h: sum, windowStart: anchor.toISOString() };
 }
@@ -439,7 +442,125 @@ function lifetimePlAveragePerDay(bot) {
   const days = Math.max((now - (bot.bornAt || now)) / 86400000, 1 / 24);
   return bot.totalPL / days;
 }
+
+/* ---------- NEW: derive numbers robustly from log + holdings ---------- */
+function getBotLogText(b) {
+  if (b?.logs?.length) return b.logs.join("\n");
+  try {
+    const p = path.join(BOT_DATA_ROOT, b.id, "latest.log");
+    if (fs.existsSync(p)) return fs.readFileSync(p, "utf8");
+  } catch {}
+  return "";
+}
+function getHoldingsAmounts(b) {
+  try {
+    const p = path.join(BOT_DATA_ROOT, b.id, "cryptoHoldings.json");
+    if (!fs.existsSync(p)) return null;
+    const j = JSON.parse(fs.readFileSync(p, "utf8"));
+    const out = {};
+    for (const [sym, obj] of Object.entries(j || {})) {
+      const amt = toNum(obj?.amount);
+      if (amt != null && amt !== 0) out[sym] = amt;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+function latestPricesFromLog(raw) {
+  const prices = {};
+  const upd = (sym, px) => {
+    if (!sym || px == null) return;
+    prices[sym] = px; // last writer wins
+  };
+  // [DEBUG][ETHUSD] price=3597.53 ...
+  for (const m of raw.matchAll(
+    /\[([A-Z0-9]+USDT?|[A-Z0-9]+USD)\][^\n]*?price=([0-9.]+)/g
+  )) {
+    upd(m[1], toNum(m[2]));
+  }
+  // "Strategy decision for ETHUSD ... @ $3597.53"
+  for (const m of raw.matchAll(
+    /Strategy decision for\s+([A-Z0-9]+USDT?|[A-Z0-9]+USD)[^\n]*?@\s*\$([0-9.]+)/g
+  )) {
+    upd(m[1], toNum(m[2]));
+  }
+  return prices;
+}
+function deriveFromLogAndHoldings(b) {
+  const raw = getBotLogText(b);
+
+  // Beginning Portfolio Value
+  const mBPV = /Beginning Portfolio Value\s*[:=]\s*\$?([0-9.,-]+)/i.exec(raw);
+  const beginningPortfolioValue = mBPV ? money(mBPV[1]) : 0;
+  const bpvSource = mBPV ? "log" : b.bpvSource || "initial";
+
+  // Count only executed trades
+  const buys = (raw.match(/BUY executed:/g) || []).length;
+  const sells = (raw.match(/SELL executed:/g) || []).length;
+
+  // Total P/L from lines like "P/L $123.45" (sum)
+  const totalPL = (raw.match(/P\/L\s*\$([0-9.,-]+)/g) || [])
+    .map((x) => money(x.replace(/.*\$/, "")))
+    .reduce((a, c) => a + c, 0);
+
+  // Locked: prefer latest "Locked: $X"; else sum "PROFIT LOCKED: $X moved ..."
+  let locked = 0;
+  const lockedTotals = [
+    ...raw.matchAll(/(^|\b)Locked\s*[:=]\s*\$([0-9.,-]+)/g),
+  ].map((m) => money(m[2]));
+  if (lockedTotals.length) {
+    locked = Math.max(...lockedTotals);
+  } else {
+    locked = [...raw.matchAll(/PROFIT LOCKED:\s*\$([0-9.,-]+)/g)]
+      .map((m) => money(m[1]))
+      .reduce((a, c) => a + c, 0);
+  }
+
+  // Cash / Crypto (mkt) direct prints if present
+  const cashMatch = /(^|\b)Cash\s*[:=]\s*\$([0-9.,-]+)/i.exec(raw);
+  const cryptoMatch = /Crypto\s*\(mkt\)\s*[:=]\s*\$([0-9.,-]+)/i.exec(raw);
+  let cash = cashMatch ? money(cashMatch[2]) : 0;
+  let cryptoMkt = cryptoMatch ? money(cryptoMatch[1]) : 0;
+
+  // If Crypto(mkt) not printed yet, derive from holdings amounts * latest prices from log
+  if (!cryptoMatch) {
+    const amounts = getHoldingsAmounts(b);
+    if (amounts) {
+      const prices = latestPricesFromLog(raw);
+      let sum = 0;
+      for (const [sym, amt] of Object.entries(amounts)) {
+        const px = prices[sym];
+        if (px != null) sum += amt * px;
+      }
+      if (sum > 0) cryptoMkt = sum;
+    }
+  }
+
+  // Infer cash if still missing but BPV known
+  if ((cash == null || cash === 0) && beginningPortfolioValue > 0) {
+    const inferred = beginningPortfolioValue - (cryptoMkt || 0) - (locked || 0);
+    if (Number.isFinite(inferred) && inferred >= 0) cash = inferred;
+  }
+
+  const currentPortfolioValue = (cash || 0) + (cryptoMkt || 0) + (locked || 0);
+
+  return {
+    beginningPortfolioValue: Number((beginningPortfolioValue || 0).toFixed(2)),
+    bpvSource,
+    buys,
+    sells,
+    totalPL: Number((totalPL || 0).toFixed(2)),
+    cash: Number((cash || 0).toFixed(2)),
+    cryptoMkt: Number((cryptoMkt || 0).toFixed(2)),
+    locked: Number((locked || 0).toFixed(2)),
+    currentPortfolioValue: Number((currentPortfolioValue || 0).toFixed(2)),
+  };
+}
+
+/* ---------- live metric taps from streaming stdout ---------- */
 function parseRuntimeMetrics(bot, ln) {
+  // BPV
   const mBegin = /Beginning Portfolio Value\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
   if (mBegin) {
     const v = toNum(mBegin[1]);
@@ -449,8 +570,9 @@ function parseRuntimeMetrics(bot, ln) {
       saveBotMeta(BOT_DATA_ROOT, bot);
     }
   }
+  // Cash, Crypto (mkt), Locked triple or singles
   const triple =
-    /Cash\s*[:=]\s*\$?([0-9.,-]+)\s*,\s*Crypto\s*[:=]\s*\$?([0-9.,-]+)\s*,\s*Locked\s*[:=]\s*\$?([0-9.,-]+)/i.exec(
+    /Cash\s*[:=]\s*\$?([0-9.,-]+)\s*,\s*Crypto\s*\(mkt\)\s*[:=]\s*\$?([0-9.,-]+)\s*,\s*Locked\s*[:=]\s*\$?([0-9.,-]+)/i.exec(
       ln
     );
   if (triple) {
@@ -473,23 +595,29 @@ function parseRuntimeMetrics(bot, ln) {
     const v = toNum(mCrypto[2]);
     if (v !== null) bot.cryptoMkt = v;
   }
-  const mLocked = /(^|\b)Locked\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
-  if (mLocked) {
-    const v = toNum(mLocked[2]);
+  const mLockedTotal = /(^|\b)Locked\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
+  if (mLockedTotal) {
+    const v = toNum(mLockedTotal[2]);
     if (v !== null) bot.locked = v;
   }
-  const sellLocked = /SELL executed.*Locked\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
-  if (sellLocked) {
-    const v = toNum(sellLocked[1]);
+  // NEW: Profit lock events (increment)
+  const mLockEvent = /PROFIT LOCKED:\s*\$?([0-9.,-]+)/i.exec(ln);
+  if (mLockEvent) {
+    const v = toNum(mLockEvent[1]);
     if (v !== null && v >= 0) bot.locked = Number(bot.locked || 0) + v;
   }
+  // Total P/L
   const mTotal =
     /(Total P\/L|Total PL|P\/L total)\s*[:=]\s*\$?([0-9.,-]+)/i.exec(ln);
   if (mTotal) {
     const v = toNum(mTotal[2]);
     if (v !== null) bot.totalPL = v;
   }
+  // Counts: only executed trades (ignore seeding/skips/blocked)
+  if (/BUY executed:/i.test(ln)) bot.buys += 1;
+  if (/SELL executed:/i.test(ln)) bot.sells += 1;
 
+  // If BPV unknown but we have pieces, infer it once
   if (
     (!bot.beginningPortfolioValue || bot.beginningPortfolioValue === 0) &&
     typeof bot.cash === "number" &&
@@ -499,8 +627,6 @@ function parseRuntimeMetrics(bot, ln) {
     if (Number.isFinite(inferred) && inferred > 0)
       bot.beginningPortfolioValue = inferred;
   }
-  if (/(BUY executed|🟢\s*BUY|\bBUY\b)/i.test(ln)) bot.buys += 1;
-  if (/(SELL executed|🔴\s*SELL|\bSELL\b)/i.test(ln)) bot.sells += 1;
 }
 
 /* ---------------- spawning ---------------- */
@@ -664,7 +790,6 @@ r.get("/strategies", async (req, res) => {
     res.json(DEFAULT_STRATEGY_LIST); // absolute fallback so UI never empties
   }
 });
-
 r.get("/strategies/:id/config", (req, res) =>
   res.json({
     strategyId: req.params.id,
@@ -841,35 +966,37 @@ r.get("/bots/:id/logs.txt", (req, res) => {
 });
 
 function buildStats(b) {
-  if (
-    (b.beginningPortfolioValue == null || b.beginningPortfolioValue === 0) &&
-    b.id &&
-    b.status !== "running" &&
-    !b.child
-  ) {
-    const persisted = readMeta(b);
-    if (persisted && persisted.beginningPortfolioValue) {
-      b.beginningPortfolioValue = persisted.beginningPortfolioValue;
-      b.bpvSource = b.bpvSource || persisted.bpvSource || "initial";
-    }
-  }
+  // Merge derived numbers from log/holdings with live counters
+  const derived = deriveFromLogAndHoldings(b);
   const { pl24h } = computePl24h(b);
+
+  // Prefer derived values unless live counters are better than zero
+  const beginningPortfolioValue =
+    derived.beginningPortfolioValue || b.beginningPortfolioValue || 0;
+
   const currentPortfolioValue =
-    Number(b.cash || 0) + Number(b.cryptoMkt || 0) + Number(b.locked || 0);
+    (derived.cash || b.cash || 0) +
+    (derived.cryptoMkt || b.cryptoMkt || 0) +
+    (derived.locked || b.locked || 0);
+
   return {
     id: b.id,
     name: b.name,
     status: b.status,
     strategyId: b.strategyId,
-    beginningPortfolioValue: b.beginningPortfolioValue || 0,
-    bpvSource: b.bpvSource || "initial",
+
+    beginningPortfolioValue,
+    bpvSource: derived.bpvSource || b.bpvSource || "initial",
     duration: durationString(b),
-    buys: b.buys,
-    sells: b.sells,
-    totalPL: b.totalPL,
-    cash: b.cash,
-    cryptoMkt: b.cryptoMkt,
-    locked: b.locked,
+
+    buys: b.buys || derived.buys || 0,
+    sells: b.sells || derived.sells || 0,
+
+    totalPL: b.totalPL || derived.totalPL || 0,
+    cash: derived.cash || b.cash || 0,
+    cryptoMkt: derived.cryptoMkt || b.cryptoMkt || 0,
+    locked: derived.locked || b.locked || 0,
+
     currentPortfolioValue,
     pl24h,
     avgDailyPL: lifetimePlAveragePerDay(b),

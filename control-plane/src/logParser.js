@@ -1,150 +1,146 @@
-// control-plane/src/logParser.js (ESM)
-// Counts only EXECUTED trades, tracks last prices from decision/hold lines,
-// and computes live Crypto (mkt) & Total P/L without keypress status.
+// control-plane/src/logParser.js
+// Robust log parser that derives summary even before first explicit Cash/Crypto lines.
+// Computes Crypto (mkt) from the "Current Holdings" table and tracks Locked/counters.
 
-const NUM = (x) => {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : 0;
-};
+const MONEY_RE = /-?\$?\s*([0-9][0-9,]*\.?[0-9]*)/;
+const LOCKED_LINE_RE = /Locked:\s*\$?\s*([0-9][0-9,]*\.?[0-9]*)/g;
+const PROFIT_LOCK_LINE_RE =
+  /PROFIT LOCKED:\s*\$?\s*([0-9][0-9,]*\.?[0-9]*)\s*moved/i;
+const BEGIN_PV_RE =
+  /Beginning Portfolio Value:\s*\$?\s*([0-9][0-9,]*\.?[0-9]*)/;
+const TOTAL_PL_RE = /Total P\/L:\s*\$?\s*([0-9][0-9,]*\.?[0-9]*)/;
+const CASH_RE = /^\s*Cash\s*:?\s*\$?\s*([0-9][0-9,]*\.?[0-9]*)/im;
+const CRYPTO_MKT_RE =
+  /^\s*Crypto\s*\(mkt\)\s*:?\s*\$?\s*([0-9][0-9,]*\.?[0-9]*)/im;
 
-export function round2(x) {
-  return Math.round(NUM(x) * 100) / 100;
+// Table rows look like:
+// │ 1  │ BTCUSD │ 0.037830 │ 114887.76802517 │ 113208.000000 │
+const HOLDINGS_ROW_RE =
+  /^\s*│\s*\d+\s*│\s*([A-Z0-9]+)\s*│\s*([-0-9.,]+)\s*│\s*([-0-9.,]+)\s*│/;
+
+function toNumber(maybeStr) {
+  if (maybeStr == null) return null;
+  const s = String(maybeStr).replace(/[^0-9.-]/g, "");
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
 }
 
-export function createBotState(seed) {
+function parseLastLocked(text) {
+  // Prefer the latest explicit "Locked: $X" total if present.
+  let last = null;
+  for (const m of text.matchAll(LOCKED_LINE_RE)) {
+    last = toNumber(m[1]);
+  }
+  if (last != null) return last;
+
+  // Fallback: sum individual profit-lock events if no "Locked:" total was printed yet.
+  let sum = 0;
+  let found = false;
+  for (const m of text.matchAll(PROFIT_LOCK_LINE_RE)) {
+    const v = toNumber(m[1]);
+    if (v != null) {
+      sum += v;
+      found = true;
+    }
+  }
+  return found ? sum : 0;
+}
+
+function parseBuysSells(text) {
+  // Defensive: support multiple emoji/styles that might appear.
+  const buyCount =
+    (text.match(/BUY executed/gi) || []).length +
+    (text.match(/🟢\s*BUY/gi) || []).length +
+    (text.match(/✅\s*BUY/gi) || []).length;
+
+  const sellCount =
+    (text.match(/SELL executed/gi) || []).length +
+    (text.match(/🔴\s*SELL/gi) || []).length;
+
+  return { buyCount, sellCount };
+}
+
+function parseHoldingsTableValue(text) {
+  // Find the last "Current Holdings:" block and sum qty*price for rows.
+  const idx = text.lastIndexOf("Current Holdings:");
+  if (idx === -1) return null;
+
+  const tail = text.slice(idx);
+  const lines = tail.split(/\r?\n/);
+  let total = 0;
+  let any = false;
+
+  for (const line of lines) {
+    const m = line.match(HOLDINGS_ROW_RE);
+    if (!m) {
+      // stop if we've walked past the table
+      if (any && !line.includes("│")) break;
+      continue;
+    }
+    const qty = toNumber(m[2]);
+    const price = toNumber(m[3]);
+    if (qty != null && price != null) {
+      total += qty * price;
+      any = true;
+    }
+  }
+  return any ? total : null;
+}
+
+function parseMoneyByRegex(text, re) {
+  const m = text.match(re);
+  return m ? toNumber(m[1]) : null;
+}
+
+function fmt(amount) {
+  if (amount == null || !Number.isFinite(amount)) return null;
+  // Round to cents to avoid floating noise for API consumers/UI.
+  return Math.round(amount * 100) / 100;
+}
+
+function buildSummary(logText) {
+  const text = String(logText ?? "");
+
+  const beginningPortfolioValue = parseMoneyByRegex(text, BEGIN_PV_RE);
+  const totalPL = parseMoneyByRegex(text, TOTAL_PL_RE);
+
+  // Try to read explicit Cash / Crypto(mkt) first…
+  let cash = parseMoneyByRegex(text, CASH_RE);
+  let cryptoMkt = parseMoneyByRegex(text, CRYPTO_MKT_RE);
+
+  // …otherwise compute Crypto(mkt) from holdings table right away.
+  if (cryptoMkt == null) {
+    cryptoMkt = parseHoldingsTableValue(text);
+  }
+
+  // Locked total (prefer 'Locked: $X' total; fall back to sum of PROFIT LOCKED lines)
+  const locked = parseLastLocked(text);
+
+  // Compute current portfolio value with robust fallbacks.
+  // If we still don't have cash, treat it as 0 until logs print it.
+  const currentPortfolioValue = (cryptoMkt ?? 0) + (cash ?? 0) + (locked ?? 0);
+
+  const { buyCount, sellCount } = parseBuysSells(text);
+
   return {
-    id: seed.id,
-    startedAt: seed.startedAt || Date.now(),
-    strategy: seed.strategy || "",
-    symbols: new Set(seed.symbols || []),
-
-    holdings: seed.holdings || {}, // { SYM: { amount, costBasis } }
-
-    buys: 0,
-    sells: 0,
-
-    cash: NUM(seed.cash) || 0,
-    locked: NUM(seed.locked) || 0,
-    crypto: 0,
-    totalPL: 0,
-
-    lastPrice: {}, // { SYM: price }
-    startingValue: NUM(seed.startingValue) || 0,
-
-    status: "stopped",
-    lastLineAt: null,
-    lastLine: "",
+    beginningPortfolioValue: fmt(beginningPortfolioValue),
+    buys: buyCount,
+    sells: sellCount,
+    totalPL: fmt(totalPL), // may be null until first time it’s printed
+    cash: fmt(cash ?? 0),
+    cryptoMkt: fmt(cryptoMkt ?? 0),
+    locked: fmt(locked ?? 0),
+    currentPortfolioValue: fmt(currentPortfolioValue),
   };
 }
 
-export function computeCryptoValue(bot) {
-  let total = 0;
-  const holdings = bot.holdings || {};
-  for (const sym of Object.keys(holdings)) {
-    const qty = NUM(holdings[sym]?.amount);
-    const px = NUM(bot.lastPrice[sym]);
-    if (qty > 0 && Number.isFinite(px)) total += qty * px;
-  }
-  return round2(total);
-}
-
-export function applyLine(bot, ln) {
-  bot.lastLine = ln;
-  bot.lastLineAt = Date.now();
-
-  let changed = false;
-  let emitSnapshot = false;
-
-  if (/\bInitial cycle complete\b/i.test(ln)) {
-    bot.status = "running";
-    changed = true;
-    emitSnapshot = true;
-  }
-  if (/\b(stopped|exited)\b/i.test(ln)) {
-    bot.status = "stopped";
-    changed = true;
-    emitSnapshot = true;
-  }
-
-  // Count ONLY executed trades
-  const isBuyExec =
-    /\bBUY executed:/i.test(ln) || /^🟢\s*BUY executed:/i.test(ln);
-  const isSellExec =
-    /\bSELL executed:/i.test(ln) || /^🔴\s*SELL executed:/i.test(ln);
-  if (isBuyExec) {
-    bot.buys += 1;
-    changed = true;
-    emitSnapshot = true;
-  }
-  if (isSellExec) {
-    bot.sells += 1;
-    changed = true;
-    emitSnapshot = true;
-    const mLocked = /Locked:\s*\$(-?\d+(?:\.\d+)?)/i.exec(ln);
-    if (mLocked)
-      bot.locked = Math.max(0, round2(NUM(bot.locked) + NUM(mLocked[1])));
-  }
-
-  // Track per-symbol prices from decision/hold/debug lines
-  //  "📈 Strategy decision for BTCUSD: SELL @ $116307.69806500"
-  //  "💤 Strategy decision for BONKUSD: HOLD @ $0.00002278"
-  //  "[DEBUG][PEPEUSD] Buy check: price=0.000010795, ..."
-  let sym, px;
-  let mm = ln.match(
-    /Strategy decision for\s+([A-Z0-9]+):\s+\w+\s+@\s+\$(-?\d+(?:\.\d+)?)/i
-  );
-  if (mm) {
-    sym = mm[1];
-    px = Number(mm[2]);
-  } else {
-    mm = ln.match(/\[DEBUG]\[([A-Z0-9]+)\].*?\bprice\s*=\s*(-?\d+(?:\.\d+)?)/i);
-    if (mm) {
-      sym = mm[1];
-      px = Number(mm[2]);
-    }
-  }
-  if (sym && Number.isFinite(px)) {
-    bot.lastPrice[sym] = px;
-    bot.symbols.add(sym);
-    changed = true;
-  }
-
-  // Parse optional STATUS lines if present
-  const mCash = /Cash:\s*\$(-?\d+(?:\.\d+)?)/i.exec(ln);
-  const mCrypto = /Crypto\s*\(mkt\):\s*\$(-?\d+(?:\.\d+)?)/i.exec(ln);
-  const mLock = /Locked:\s*\$(-?\d+(?:\.\d+)?)/i.exec(ln);
-  const mTPL = /Total\s*P\/L:\s*\$(-?\d+(?:\.\d+)?)/i.exec(ln);
-  if (mCash) {
-    bot.cash = round2(NUM(mCash[1]));
-    changed = true;
-    emitSnapshot = true;
-  }
-  if (mCrypto) {
-    bot.crypto = round2(NUM(mCrypto[1]));
-    changed = true;
-    emitSnapshot = true;
-  }
-  if (mLock) {
-    bot.locked = round2(NUM(mLock[1]));
-    changed = true;
-    emitSnapshot = true;
-  }
-  if (mTPL) {
-    bot.totalPL = round2(NUM(mTPL[1]));
-    changed = true;
-    emitSnapshot = true;
-  }
-
-  // If we just learned a price, recompute crypto and P/L even without STATUS
-  if (sym) {
-    const cryptoVal = computeCryptoValue(bot);
-    const endValue = NUM(bot.cash) + NUM(bot.locked) + NUM(cryptoVal);
-    bot.crypto = round2(cryptoVal);
-    if (!bot.startingValue) bot.startingValue = round2(endValue); // first tick sets baseline
-    bot.totalPL = round2(endValue - NUM(bot.startingValue));
-    emitSnapshot = true;
-    changed = true;
-  }
-
-  return { changed, emitSnapshot };
-}
+module.exports = {
+  buildSummary,
+  // exporting helpers makes unit/local testing easier
+  _internal: {
+    parseHoldingsTableValue,
+    parseLastLocked,
+    parseBuysSells,
+    toNumber,
+  },
+};

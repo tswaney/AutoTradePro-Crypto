@@ -262,7 +262,7 @@ export default function BotDetailScreen() {
         {/* Logs */}
         <View style={[styles.card, { minHeight: 160 }]}>
           <Text style={styles.cardTitle}>Logs</Text>
-          <ScrollView ref={scrollRef} style={{ marginTop: 8, maxHeight: 320 }}>
+          <ScrollView ref={scrollRef} style={{ marginTop: 8, maxHeight: 220 }}>
             {logs.length === 0 ? (
               <Text style={{ color: '#64748b' }}>No logs yet.</Text>
             ) : (
