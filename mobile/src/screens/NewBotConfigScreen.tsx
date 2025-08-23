@@ -1,370 +1,308 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Modal,
   Platform,
-  Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-  FlatList,
-} from 'react-native';
-import { useNavigation, useRoute, RouteProp, StackActions } from '@react-navigation/native';
+  TouchableOpacity, // <-- from react-native (fix)
+} from "react-native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-type RootStackParamList = {
-  NewBotConfig: {
-    draft?: {
-      name?: string;
-      symbols?: string[] | string;
-      strategyId?: string;
-      strategy?: string;
+type StrategyField =
+  | {
+      key: string;
+      label: string;
+      type: "string";
+      default?: string;
+    }
+  | {
+      key: string;
+      label: string;
+      type: "number";
+      step?: number;
+      min?: number;
+      max?: number;
+      default?: number;
+    }
+  | {
+      key: string;
+      label: string;
+      type: "enum";
+      options: string[];
+      default?: string;
     };
-    name?: string;
-    symbols?: string;
-    strategyId?: string;
-  };
-  BotDetail: { id: string };
+
+type StrategyConfig = {
+  id: string;
+  defaults?: Record<string, any>;
+  fields?: StrategyField[];
 };
 
-type Strategy = { id: string; title?: string; name?: string; description?: string };
-type Field = {
-  key: string;
-  label: string;
-  type: 'number' | 'string' | 'enum';
-  options?: string[];
-  min?: number;
-  step?: number;
-  default?: any;
-};
-type StrategyConfig = { id: string; defaults: Record<string, any>; fields: Field[] };
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:4000";
 
-const API_BASE =
-  (process as any)?.env?.EXPO_PUBLIC_API_BASE ||
-  (global as any)?.EXPO_PUBLIC_API_BASE ||
-  'http://localhost:4000';
-
-// Our stack is: Home (bots) -> NewBot -> NewBotConfig, so pop(2) returns to Home reliably
-const POP_DEPTH_TO_BOTS = 2;
+function randomSuffix(len = 4) {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let s = "";
+  for (let i = 0; i < len; i++) s += alphabet[(Math.random() * alphabet.length) | 0];
+  return s;
+}
 
 export default function NewBotConfigScreen() {
-  const navigation = useNavigation();
-  const route = useRoute<RouteProp<RootStackParamList, 'NewBotConfig'>>();
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
 
-  const draft = route.params?.draft ?? {};
-  const initialStrategyId = (draft.strategyId || draft.strategy || route.params?.strategyId || '').toString();
-  const initialName = (draft.name || route.params?.name || '').toString();
-  const initialSymbols = (() => {
-    const v = draft.symbols ?? route.params?.symbols;
-    if (Array.isArray(v)) return v.join(', ');
-    return (v || '').toString();
-  })();
+  const picked = route.params?.pickedStrategy as
+    | { id: string; name?: string }
+    | undefined;
 
-  // ---------- Top editable fields ----------
-  const [strategyId, setStrategyId] = useState<string>(initialStrategyId);
-  const [name, setName] = useState<string>(initialName);
-  const [symbols, setSymbols] = useState<string>(initialSymbols);
+  const [name, setName] = useState(`bot-${randomSuffix()}`);
+  const [symbols, setSymbols] = useState("BTCUSD, SOLUSD");
+  const [strategyId, setStrategyId] = useState<string | undefined>(picked?.id);
+  const [schema, setSchema] = useState<StrategyConfig | null>(null);
+  const [values, setValues] = useState<Record<string, any>>({});
+  const [busy, setBusy] = useState(false);
 
-  // ---------- Strategy picker data ----------
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [loadingStrategies, setLoadingStrategies] = useState<boolean>(true);
-  const [pickerOpen, setPickerOpen] = useState<boolean>(false);
+  // fetch strategy schema (fields/defaults)
+  useEffect(() => {
+    let mounted = true;
+    async function run() {
+      if (!strategyId) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/strategies/${strategyId}/config`);
+        if (!res.ok) throw new Error(`Config ${strategyId} failed: ${res.status}`);
+        const cfg = (await res.json()) as StrategyConfig;
+        if (!mounted) return;
+        setSchema(cfg);
 
-  // ---------- Strategy config ----------
-  const [loadingCfg, setLoadingCfg] = useState<boolean>(true);
-  const [cfg, setCfg] = useState<StrategyConfig | null>(null);
-  const [form, setForm] = useState<Record<string, any>>({});
-
-  // ---------- Helpers ----------
-  const computeNextBotName = useCallback(async () => {
-    try {
-      const r = await fetch(`${API_BASE}/api/bots`);
-      const data: Array<{ name?: string; id: string }> = await r.json();
-      const nums: number[] = [];
-      for (const b of (Array.isArray(data) ? data : [])) {
-        const base = String(b.name || b.id);
-        const m = base.match(/^bot-(\d+)$/i);
-        if (m) nums.push(parseInt(m[1], 10));
+        // seed defaults for dynamic form
+        const seeded: Record<string, any> = {};
+        (cfg.fields ?? []).forEach((f) => {
+          if (f.type === "number") {
+            const v = (f as any).default;
+            if (typeof v === "number") seeded[f.key] = v;
+          } else if (f.type === "string") {
+            const v = (f as any).default;
+            if (typeof v === "string") seeded[f.key] = v;
+          } else if (f.type === "enum") {
+            const v = (f as any).default ?? (f as any).options?.[0];
+            if (v != null) seeded[f.key] = v;
+          }
+        });
+        setValues(seeded);
+      } catch (err: any) {
+        console.warn(err);
+        Alert.alert("Error", `No config available for this strategy.\n${String(err?.message ?? err)}`);
+        setSchema(null);
       }
-      const next = (nums.length ? Math.max(...nums) + 1 : 1);
-      setName(`bot-${next}`);
-    } catch {
-      setName(`bot-${Math.random().toString(36).slice(2, 6)}`);
     }
-  }, []);
-
-  const loadStrategies = useCallback(async () => {
-    setLoadingStrategies(true);
-    try {
-      const r = await fetch(`${API_BASE}/api/strategies`);
-      const list: Strategy[] = await r.json();
-      const items = Array.isArray(list) ? list : [];
-      setStrategies(items);
-      if (!strategyId && items.length) setStrategyId(items[0].id);
-    } catch (e: any) {
-      Alert.alert('Load failed', `Could not load strategies: ${String(e?.message || e)}`);
-      setStrategies([]);
-    } finally {
-      setLoadingStrategies(false);
-    }
+    run();
+    return () => {
+      mounted = false;
+    };
   }, [strategyId]);
 
-  const loadConfig = useCallback(async (id: string) => {
-    if (!id) {
-      setCfg(null);
-      setLoadingCfg(false);
-      return;
-    }
-    setLoadingCfg(true);
-    try {
-      const r = await fetch(`${API_BASE}/api/strategies/${encodeURIComponent(id)}/config`);
-      const data: StrategyConfig = await r.json();
-      setCfg(data);
-      const initial: Record<string, any> = {};
-      for (const f of data.fields || []) initial[f.key] = f.default ?? '';
-      setForm(initial);
-    } catch (e: any) {
-      setCfg(null);
-      Alert.alert('Load failed', `Could not load config: ${String(e?.message || e)}`);
-    } finally {
-      setLoadingCfg(false);
-    }
+  const canCreate = !!strategyId && name.trim().length > 0 && symbols.trim().length > 0;
+
+  const onChangeValue = useCallback((k: string, v: string) => {
+    setValues((s) => ({ ...s, [k]: v }));
   }, []);
 
-  // ---------- Initial defaults ----------
-  useEffect(() => {
-    if (!name) computeNextBotName();
-    if (!symbols) setSymbols('BTCUSD, SOLUSD');
-  }, [name, symbols, computeNextBotName]);
+  const onCreate = useCallback(async () => {
+    if (!canCreate || !strategyId) return;
 
-  // ---------- Load strategies on mount ----------
-  useEffect(() => { loadStrategies(); }, [loadStrategies]);
-
-  // ---------- Reload config whenever strategyId changes ----------
-  useEffect(() => { loadConfig(strategyId); }, [strategyId, loadConfig]);
-
-  // ---------- Derived ----------
-  const canCreate = useMemo(
-    () => !!strategyId?.trim() && !!name?.trim() && !!symbols?.trim() && !!cfg,
-    [strategyId, name, symbols, cfg]
-  );
-
-  const onChangeField = (key: string, v: string) => setForm(prev => ({ ...prev, [key]: v }));
-
-  const onCreateBot = useCallback(async () => {
-    if (!canCreate) return;
+    setBusy(true);
     try {
+      const body = {
+        name: name.trim(),
+        symbols: symbols.replace(/\s+/g, ""),
+        strategyId,
+        config: values,
+      };
       const res = await fetch(`${API_BASE}/api/bots`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          symbols: symbols.trim(),
-          strategyId: strategyId.trim(),
-          config: form,
-        }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
-      if (res.status !== 201 && res.status !== 200) {
+      if (!res.ok) {
         const text = await res.text();
-        throw new Error(text || `Create failed (${res.status})`);
+        throw new Error(`Create failed: ${res.status}\n${text}`);
       }
-      // Robust: go back to bots list regardless of route names
-      navigation.dispatch(StackActions.pop(POP_DEPTH_TO_BOTS));
-    } catch (e: any) {
-      Alert.alert('Create failed', String(e?.message || e));
-    }
-  }, [canCreate, name, symbols, strategyId, form, navigation]);
+      const data = await res.json();
 
-  const currentStrategyTitle =
-    strategies.find(s => s.id === strategyId)?.title ||
-    strategies.find(s => s.id === strategyId)?.name ||
-    strategyId;
+      Alert.alert("Created", `Bot ${data?.name ?? body.name} created.`, [
+        {
+          text: "OK",
+          onPress: () => {
+            // Navigate to the Bots list; it refetches on focus.
+            setTimeout(() => {
+              navigation.navigate("Bots");
+            }, 50);
+          },
+        },
+      ]);
+    } catch (err: any) {
+      console.warn("Create bot error:", err);
+      Alert.alert("Error", String(err?.message ?? err));
+    } finally {
+      setBusy(false);
+    }
+  }, [canCreate, strategyId, name, symbols, values, navigation]);
 
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={{ flex: 1 }}>
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={styles.container}
-            keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.select({ ios: "padding", android: undefined })}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.h1}>Configure Bot</Text>
+
+          {/* Strategy (read-only id chosen in prior screen) */}
+          <Text style={styles.label}>Strategy</Text>
+          <TextInput
+            style={[styles.input, styles.disabled]}
+            value={strategyId ?? ""}
+            editable={false}
+            placeholder="strategy id"
+            placeholderTextColor="#6b7280"
+          />
+
+          {/* Name */}
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+
+          {/* Symbols */}
+          <Text style={styles.label}>Symbols</Text>
+          <TextInput
+            style={styles.input}
+            value={symbols}
+            onChangeText={setSymbols}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+
+          {/* Dynamic config fields */}
+          {(schema?.fields ?? []).map((f) => {
+            if (f.type === "enum") {
+              return (
+                <View key={f.key} style={{ marginTop: 14 }}>
+                  <Text style={styles.label}>{f.label}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={String(values[f.key] ?? "")}
+                    onChangeText={(t) => onChangeValue(f.key, t)}
+                    placeholder={(f as any).options?.join(" | ")}
+                    placeholderTextColor="#6b7280"
+                  />
+                </View>
+              );
+            }
+            return (
+              <View key={f.key} style={{ marginTop: 14 }}>
+                <Text style={styles.label}>{f.label}</Text>
+                <TextInput
+                  style={styles.input}
+                  keyboardType={f.type === "number" ? "decimal-pad" : "default"}
+                  value={String(values[f.key] ?? "")}
+                  onChangeText={(t) => onChangeValue(f.key, t)}
+                />
+              </View>
+            );
+          })}
+
+          <View style={{ height: 24 }} />
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnGhost]}
+            onPress={() => navigation.goBack()}
+            disabled={busy}
           >
-            <Text style={styles.h1}>Configure Bot</Text>
-
-            {/* Strategy picker */}
-            <Text style={styles.label}>Strategy</Text>
-            <Pressable onPress={() => setPickerOpen(true)} style={[styles.input, styles.pickField]}>
-              <Text style={currentStrategyTitle ? styles.pickText : styles.pickPlaceholder}>
-                {currentStrategyTitle || 'Tap to choose a strategy'}
-              </Text>
-            </Pressable>
-
-            {/* Name */}
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              placeholder="bot-1"
-              value={name}
-              onChangeText={setName}
-              autoCapitalize="none"
-              style={styles.input}
-            />
-
-            {/* Symbols */}
-            <Text style={styles.label}>Symbols</Text>
-            <TextInput
-              placeholder="BTCUSD, SOLUSD"
-              value={symbols}
-              onChangeText={setSymbols}
-              autoCapitalize="characters"
-              style={styles.input}
-            />
-
-            <View style={styles.divider} />
-
-            {/* Strategy params */}
-            {loadingCfg ? (
-              <View style={styles.loading}>
-                <ActivityIndicator />
-                <Text style={styles.loadingText}>Loading config…</Text>
-              </View>
-            ) : !cfg ? (
-              <Text style={styles.error}>No config available for this strategy.</Text>
-            ) : (
-              <View style={{ gap: 10 }}>
-                {cfg.fields.map((f) => (
-                  <View key={f.key} style={{ gap: 6 }}>
-                    <Text style={styles.label}>{f.label}</Text>
-                    <TextInput
-                      placeholder={f.label}
-                      value={String(form[f.key] ?? '')}
-                      onChangeText={(t) => onChangeField(f.key, t)}
-                      inputMode={f.type === 'number' ? 'decimal' : 'text'}
-                      keyboardType={f.type === 'number' ? 'decimal-pad' : 'default'}
-                      autoCapitalize="none"
-                      style={styles.input}
-                    />
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <View style={{ height: 40 }} />
-          </ScrollView>
-
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Pressable style={[styles.btn, styles.secondary]} onPress={() => navigation.goBack()}>
-              <Text style={styles.btnText}>Back</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.btn, styles.primary, !canCreate && styles.btnDisabled]}
-              disabled={!canCreate}
-              onPress={onCreateBot}
-            >
-              <Text style={styles.btnText}>Create Bot</Text>
-            </Pressable>
-          </View>
+            <Text style={styles.btnText}>Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, canCreate ? styles.btnPrimary : styles.btnDisabled]}
+            disabled={!canCreate || busy}
+            onPress={onCreate}
+          >
+            <Text style={styles.btnText}>Create Bot</Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-
-      {/* Strategy Picker Modal */}
-      <Modal visible={pickerOpen} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setPickerOpen(false)}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
-            <Text style={styles.modalTitle}>Choose Strategy</Text>
-            {loadingStrategies ? (
-              <View style={styles.loading}><ActivityIndicator /><Text style={styles.loadingText}>Loading…</Text></View>
-            ) : (
-              <FlatList
-                data={strategies}
-                keyExtractor={(s) => s.id}
-                ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-                renderItem={({ item }) => (
-                  <Pressable
-                    onPress={() => { setStrategyId(item.id); setPickerOpen(false); }}
-                    style={styles.modalRow}
-                  >
-                    <Text style={styles.modalRowTitle}>{item.title || item.name || item.id}</Text>
-                    {!!item.description && <Text style={styles.modalRowDesc}>{item.description}</Text>}
-                  </Pressable>
-                )}
-                style={{ maxHeight: 420 }}
-              />
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, paddingBottom: 24 },
-  h1: { color: '#e2e8f0', fontWeight: '800', fontSize: 20, marginBottom: 10 },
-  label: { color: '#cbd5e1', fontWeight: '600', marginBottom: 6 },
-  input: {
-    color: '#e2e8f0',
-    backgroundColor: '#0f172a',
-    borderColor: '#1f2937',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
+  container: { padding: 16, paddingBottom: 80 },
+  h1: {
+    color: "white",
+    fontWeight: "700",
+    fontSize: 22,
+    marginBottom: 12,
   },
-  pickField: { justifyContent: 'center' },
-  pickText: { color: '#e2e8f0' },
-  pickPlaceholder: { color: '#64748b' },
-  divider: { height: 1, backgroundColor: '#1f2937', marginVertical: 12 },
-  loading: { alignItems: 'center', gap: 8, paddingVertical: 16 },
-  loadingText: { color: '#a0aec0' },
-  error: { color: '#f87171' },
+  label: {
+    color: "#9aa8b5",
+    fontSize: 13,
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  input: {
+    backgroundColor: "#131b24",
+    color: "white",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  disabled: {
+    opacity: 0.7,
+  },
   footer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
-    padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#1f2937',
-    backgroundColor: '#0b1220',
+    padding: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(6,10,14,0.9)",
   },
   btn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  primary: { backgroundColor: '#2563eb' },
-  secondary: { backgroundColor: '#374151' },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: '#fff', fontWeight: '700' },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
+  btnGhost: {
+    backgroundColor: "#10151c",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.12)",
   },
-  modalCard: {
-    width: '100%',
-    maxWidth: 520,
-    backgroundColor: '#0f172a',
-    borderRadius: 14,
-    borderColor: '#1f2937',
-    borderWidth: 1,
-    padding: 14,
+  btnPrimary: {
+    backgroundColor: "#2563eb",
   },
-  modalTitle: { color: '#e2e8f0', fontWeight: '800', fontSize: 16, marginBottom: 10 },
-  modalRow: {
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#0b1220',
-    borderColor: '#1f2937',
-    borderWidth: 1,
+  btnDisabled: {
+    backgroundColor: "#233044",
   },
-  modalRowTitle: { color: '#e2e8f0', fontWeight: '700' },
-  modalRowDesc: { color: '#cbd5e1', marginTop: 4, lineHeight: 18 },
+  btnText: {
+    color: "white",
+    fontWeight: "600",
+  },
 });
