@@ -1,243 +1,247 @@
-// control-plane/src/routes/bots.js
 import express from "express";
+import { promises as fsp } from "fs";
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
-import { buildSummary } from "../logParser.js"; // use the robust parser I shared
 
 const router = express.Router();
 
-// ---------- Paths & helpers ----------
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const DATA_DIR =
-  process.env.DATA_DIR || path.join(REPO_ROOT, "backend", "data");
-const LOGS_DIR =
-  process.env.LOGS_DIR || path.join(REPO_ROOT, "backend", "logs");
 
-function ts() {
-  return new Date().toISOString();
+// monorepo root = three levels up from control-plane/src/routes
+const repoRoot = path.resolve(__dirname, "..", "..", "..");
+
+const DATA_ROOT =
+  process.env.DATA_ROOT || path.join(repoRoot, "backend", "data");
+const LOG_DIR = process.env.LOG_DIR || path.join(repoRoot, "backend", "logs");
+
+// ---------- helpers ----------
+const sanitizeId = (v = "") => v.replace(/^\/+/, "").replace(/\/+$/, "");
+const normId = (id) => {
+  const clean = sanitizeId(id);
+  return clean.startsWith("bot-") ? clean : `bot-${clean}`;
+};
+
+const botDir = (id) => path.join(DATA_ROOT, normId(id));
+const metaPath = (id) => path.join(botDir(id), "meta.json");
+const logPath = (id) => path.join(LOG_DIR, `${normId(id)}.log`);
+
+async function ensureBotDir(id) {
+  await fsp.mkdir(botDir(id), { recursive: true });
+}
+async function ensureLogDir() {
+  await fsp.mkdir(LOG_DIR, { recursive: true });
 }
 
-function exists(p) {
+async function readJSON(file, fallback = null) {
   try {
-    return fs.existsSync(p);
+    return JSON.parse(await fsp.readFile(file, "utf8"));
   } catch {
-    return false;
+    return fallback;
   }
 }
-
-function firstExisting(paths) {
-  for (const p of paths) if (p && exists(p)) return p;
-  return null;
+async function writeJSON(file, obj) {
+  await fsp.mkdir(path.dirname(file), { recursive: true });
+  await fsp.writeFile(file, JSON.stringify(obj, null, 2), "utf8");
 }
-
-function resolveBotLogFile(id) {
-  const cands = [
-    path.join(DATA_DIR, id, "latest.log"),
-    path.join(DATA_DIR, id, "testPrice_output.txt"),
-    path.join(DATA_DIR, `${id}.log`),
-    path.join(LOGS_DIR, `${id}.log`),
-    path.join(LOGS_DIR, "latest.log"),
-    path.join(DATA_DIR, "latest.log"),
-  ];
-  const found = firstExisting(cands);
-  if (!found) {
-    console.log(
-      `[logs] ${ts()} no log file found for ${id}; candidates=`,
-      cands
-    );
-  } else {
-    // console.log(`[logs] ${ts()} using log file for ${id}: ${found}`);
+async function tailFileLines(file, limit = 1000) {
+  try {
+    const content = await fsp.readFile(file, "utf8");
+    const lines = content.split(/\r?\n/).filter(Boolean);
+    const n = Math.max(0, parseInt(limit, 10) || 0);
+    return n ? lines.slice(-n) : lines;
+  } catch {
+    return [];
   }
-  return found;
+}
+const rand = (n = 4) =>
+  Math.random()
+    .toString(36)
+    .slice(2, 2 + n);
+
+// camelCase → UPPER_SNAKE (engine-style)
+const toUpperSnake = (k) =>
+  k
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/__/g, "_")
+    .toUpperCase();
+
+function toArrayCSV(v) {
+  if (Array.isArray(v)) return v.map((s) => String(s).trim()).filter(Boolean);
+  return String(v || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-function ensureBot(id) {
-  if (!bots[id]) {
-    bots[id] = {
+// Convert UI config (camelCase) to engine config (UPPER_SNAKE)
+function toEngineConfig(cfg = {}) {
+  const out = {};
+  for (const [k, v] of Object.entries(cfg)) {
+    let val = v;
+    // coerce numeric-like fields
+    if (
+      k.toLowerCase().match(/threshold|slippage|risk|cap|brake|length|ticks/)
+    ) {
+      const num = Number(v);
+      val = Number.isFinite(num) ? num : v;
+    }
+    // priorityCryptos -> array
+    if (
+      k.toLowerCase().includes("priority") &&
+      k.toLowerCase().includes("crypto")
+    ) {
+      val = toArrayCSV(v);
+    }
+    out[toUpperSnake(k)] = val;
+  }
+  return out;
+}
+
+function initialSummary() {
+  return {
+    beginningPortfolioValue: null,
+    duration: null,
+    buys: 0,
+    sells: 0,
+    totalPL: 0,
+    cash: null,
+    cryptoMkt: null,
+    locked: null,
+    currentValue: 0,
+    dayPL: 0,
+  };
+}
+
+// ---------- CREATE ----------
+async function handleCreate(req, res) {
+  try {
+    const body = req.body || {};
+    const inputId = body.id || body.name || `bot-${rand()}`;
+    const id = normId(inputId);
+
+    const symbols = Array.isArray(body.symbols)
+      ? body.symbols.map((s) => String(s).trim()).filter(Boolean)
+      : toArrayCSV(body.symbols).map((s) => s.toUpperCase());
+
+    const strategyId = String(body.strategyId || body.strategy || "").trim();
+    const strategyName = body.strategyName || strategyId || undefined;
+
+    const uiConfig = body.config || body.params || {};
+    const engineConfig = toEngineConfig(uiConfig);
+
+    await ensureBotDir(id);
+    await ensureLogDir();
+
+    const meta = {
       id,
       name: id,
       status: "stopped",
-      strategyId: null,
-      symbols: [],
-      config: {},
-      updatedAt: ts(),
+      createdAt: new Date().toISOString(),
+      symbols,
+      strategyId: strategyId || undefined,
+      strategyName: strategyName || undefined,
+      config: uiConfig,
+      engineConfig,
+      summary: initialSummary(),
     };
+
+    await writeJSON(metaPath(id), meta);
+
+    // seed a small log line
+    const seed = `[${new Date().toISOString()}] created ${id} strategy=${strategyId}\n`;
+    await fsp.appendFile(logPath(id), seed, "utf8");
+
+    res
+      .status(201)
+      .json({ ok: true, id, status: meta.status, name: meta.name });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "create failed" });
   }
-  return bots[id];
 }
 
-// ---------- In-memory bots registry ----------
-/** @type {Record<string, any>} */
-const bots = {};
+// POST /api/bots (main entry point for “Create Bot”)
+router.post("/bots", handleCreate);
+// Back-compat: /api/bots/create
+router.post("/bots/create", handleCreate);
 
-// ---------- Routes ----------
-
-// Create bot
-// POST /api/bots
-router.post("/", (req, res) => {
-  try {
-    const { name, strategyId, symbols, config } = req.body || {};
-    const id = String(name || `bot-${Math.random().toString(36).slice(2, 6)}`);
-    console.log(
-      `[/api/bots] ${ts()} POST body:`,
-      JSON.stringify({ name, strategyId, symbols, config })
-    );
-    const bot = ensureBot(id);
-    bot.name = id;
-    bot.strategyId = strategyId || null;
-    bot.symbols = Array.isArray(symbols) ? symbols.map(String) : [];
-    bot.config = config || {};
-    bot.updatedAt = ts();
-    return res.json({ ok: true, id });
-  } catch (e) {
-    console.error(`[/api/bots] ${ts()} create error:`, e);
-    return res.status(500).json({ error: "Create failed" });
-  }
-});
-
-// List bots
-// GET /api/bots
-router.get("/", (_req, res) => {
-  console.log(`[BOT] list`);
-  res.json(Object.values(bots));
-});
-
-// Bot meta
-// GET /api/bots/:id
-router.get("/:id", (req, res) => {
-  const id = req.params.id;
-  console.log("[BOT] get", id);
-  const bot = bots[id] || null;
-  if (!bot) return res.status(404).json({ error: "Not found" });
-  res.json(bot);
-});
-
-// Start
-// POST /api/bots/:id/start
-router.post("/:id/start", (req, res) => {
-  const id = req.params.id;
-  console.log("[BOT] start", id, req.body || {});
-  const bot = ensureBot(id);
-  const { strategyId, symbols, config } = req.body || {};
-  if (strategyId !== undefined) bot.strategyId = strategyId;
-  if (Array.isArray(symbols)) bot.symbols = symbols.map(String);
-  if (config && typeof config === "object") bot.config = config;
-  if (bot.status !== "running") {
-    bot.status = "running";
-    bot.updatedAt = ts();
-    return res.json({ ok: true, changed: true, bot });
-  }
-  return res.json({
-    ok: true,
-    changed: false,
-    message: "Already running",
-    bot,
+// ---------- READ SUMMARY ----------
+router.get("/bots/:id/summary", async (req, res) => {
+  const id = sanitizeId(req.params.id);
+  const meta = (await readJSON(metaPath(id), {})) || {};
+  const summary = meta.summary || {};
+  res.json({
+    id: normId(id),
+    name: meta.name || normId(id),
+    status: meta.status || "stopped",
+    strategyId:
+      meta.strategyId || meta.strategyName || meta.strategy || undefined,
+    strategyName:
+      meta.strategyName || meta.strategyId || meta.strategy || undefined,
+    summary: {
+      beginningPortfolioValue: summary.beginningPortfolioValue ?? null,
+      duration: summary.duration ?? null,
+      buys: summary.buys ?? 0,
+      sells: summary.sells ?? 0,
+      totalPL: summary.totalPL ?? 0,
+      cash: summary.cash ?? null,
+      cryptoMkt: summary.cryptoMkt ?? null,
+      locked: summary.locked ?? null,
+      currentValue: summary.currentValue ?? 0,
+      dayPL: summary.dayPL ?? 0,
+    },
   });
 });
 
-// Stop
-// POST /api/bots/:id/stop
-router.post("/:id/stop", (req, res) => {
-  const id = req.params.id;
-  console.log("[BOT] stop", id);
-  const bot = ensureBot(id);
-  if (bot.status !== "stopped") {
-    bot.status = "stopped";
-    bot.updatedAt = ts();
-    return res.json({ ok: true, changed: true, bot });
-  }
-  return res.json({
-    ok: true,
-    changed: false,
-    message: "Already stopped",
-    bot,
-  });
+// ---------- LOGS ----------
+router.get("/bots/:id/logs", async (req, res) => {
+  const id = sanitizeId(req.params.id);
+  const limit = Number(req.query.limit || 1000);
+  const lines = await tailFileLines(logPath(id), limit);
+  res.json({ lines });
 });
 
-// Delete
-// DELETE /api/bots/:id
-router.delete("/:id", (req, res) => {
-  const id = req.params.id;
-  console.log("[BOT] delete", id);
-  if (bots[id]) {
-    delete bots[id];
-  }
-  return res.json({ ok: true });
+// ---------- START ----------
+router.post("/bots/:id/start", async (req, res) => {
+  const id = sanitizeId(req.params.id);
+  await ensureBotDir(id);
+  const meta = (await readJSON(metaPath(id), {})) || {};
+  meta.status = "running";
+  meta.startedAt = new Date().toISOString();
+  await writeJSON(metaPath(id), meta);
+  res.json({ ok: true, id: normId(id), status: meta.status });
 });
 
-// Summary (numbers for the mobile card)
-// GET /api/bots/:id/summary
-router.get("/:id/summary", (req, res) => {
-  const id = req.params.id;
+// ---------- STOP ----------
+router.post("/bots/:id/stop", async (req, res) => {
+  const id = sanitizeId(req.params.id);
+  await ensureBotDir(id);
+  const meta = (await readJSON(metaPath(id), {})) || {};
+  meta.status = "stopped";
+  meta.stoppedAt = new Date().toISOString();
+  await writeJSON(metaPath(id), meta);
+  res.json({ ok: true, id: normId(id), status: meta.status });
+});
+
+// ---------- DELETE (POST variant) ----------
+router.post("/bots/:id/delete", async (req, res) => {
+  const id = sanitizeId(req.params.id);
   try {
-    const logFile = resolveBotLogFile(id);
-    let text = "";
-    if (logFile && exists(logFile)) {
-      try {
-        text = fs.readFileSync(logFile, "utf8");
-      } catch (e) {
-        console.warn(`[summary] ${ts()} read error for ${id}:`, e.message);
-      }
-    }
-    const summary = buildSummary(text || "");
-    // also report status if we have it
-    const bot = bots[id] || {};
-    res.json({
-      id,
-      status: bot.status || "unknown",
-      ...summary,
-    });
+    await fsp.rm(botDir(id), { recursive: true, force: true });
+    res.json({ ok: true, id: normId(id) });
   } catch (e) {
-    console.error(`[summary] ${ts()} error for ${id}:`, e);
-    res.status(500).json({ error: "Failed to build summary" });
+    res.status(500).json({ error: e.message || "delete failed" });
   }
 });
 
-// Tail logs with cursor (byte offset)
-// GET /api/bots/:id/logs?cursor=0&limit=32768
-router.get("/:id/logs", (req, res) => {
-  const id = req.params.id;
-  const cursor = Math.max(0, parseInt(req.query.cursor, 10) || 0);
-  const limit = Math.max(
-    1024,
-    Math.min(parseInt(req.query.limit, 10) || 64 * 1024, 2 * 1024 * 1024)
-  );
-
-  const logFile = resolveBotLogFile(id);
-  if (!logFile || !exists(logFile)) {
-    return res.json({ lines: [], cursor });
-  }
-
+// ---------- DELETE (HTTP DELETE) ----------
+router.delete("/bots/:id", async (req, res) => {
+  const id = sanitizeId(req.params.id);
   try {
-    const stats = fs.statSync(logFile);
-    const size = stats.size;
-
-    // If no cursor supplied, tail last chunk
-    const start =
-      cursor === 0 ? Math.max(0, size - limit) : Math.min(cursor, size);
-    const end = size;
-
-    const fd = fs.openSync(logFile, "r");
-    const len = end - start;
-    const buffer = Buffer.alloc(len);
-    fs.readSync(fd, buffer, 0, len, start);
-    fs.closeSync(fd);
-
-    const text = buffer.toString("utf8");
-    // Split into lines (keep it simple; UI formats)
-    const lines = text.length ? text.split(/\r?\n/).filter(Boolean) : [];
-
-    const nextCursor = end; // byte position for the next poll
-    return res.json({ lines, cursor: nextCursor });
+    await fsp.rm(botDir(id), { recursive: true, force: true });
+    res.json({ ok: true, id: normId(id) });
   } catch (e) {
-    console.error(`[logs] ${ts()} error for ${id}:`, e);
-    return res
-      .status(500)
-      .json({ error: "Failed to read logs", lines: [], cursor });
+    res.status(500).json({ error: e.message || "delete failed" });
   }
 });
 

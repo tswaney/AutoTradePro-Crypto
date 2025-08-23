@@ -1,302 +1,380 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// mobile/src/screens/BotDetailScreen.tsx
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
-  Alert,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
+  Text,
+  View,
+  Pressable,
+  Alert,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 
-const API_BASE = (process.env.EXPO_PUBLIC_API_BASE as string) || 'http://localhost:4000';
+// If your app exports an axios instance at this path, we'll use it;
+// otherwise we fall back to fetch with a sensible API base.
+import client from '../api/client';
+import LogViewer from '../components/LogViewer';
 
-type BotMeta = {
+type RootStackParamList = {
+  BotDetail: { botId?: string; id?: string; bot?: { id?: string } };
+};
+
+type BotSummary = {
   id: string;
-  name: string;
+  name?: string;
   status: 'running' | 'stopped' | string;
   strategyId?: string;
-  symbols?: string[];
-  config?: Record<string, any>;
+  strategyName?: string;
+  summary?: {
+    beginningPortfolioValue?: number;
+    duration?: string | number;
+    buys?: number;
+    sells?: number;
+    totalPL?: number;
+    cash?: number;
+    cryptoMkt?: number;
+    locked?: number;
+    currentValue?: number;
+    dayPL?: number;
+  };
 };
 
-type Summary = {
-  id: string;
-  name: string;
-  status: string;
-  beginningPortfolioValue: number;
-  bpvSource?: string;
-  duration: string;
-  buys: number;
-  sells: number;
-  totalPL: number;
-  cash: number;
-  cryptoMkt: number;
-  locked: number;
-  currentPortfolioValue: number;
-  pl24h: number;
-  avgDailyPL: number;
-};
+type ApiError = { message?: string };
+
+// ---------- helpers ----------
+const sanitizeId = (v?: string) => (v ? v.replace(/^\/+/, '').replace(/\/+$/, '') : undefined);
+
+const guessApiBase = () =>
+  (global as any).API_BASE ||
+  (process as any)?.env?.API_BASE ||
+  'http://localhost:4000/api';
+
+const joinPath = (...parts: string[]) =>
+  parts
+    .filter(Boolean)
+    .map((p, i) => (i === 0 ? p.replace(/\/+$/, '') : p.replace(/^\/+|\/+$/g, '')))
+    .join('/');
+
+async function apiGet<T = any>(path: string, params?: Record<string, any>): Promise<T> {
+  if (client && typeof (client as any).get === 'function') {
+    const res = await (client as any).get(path, params ? { params } : undefined);
+    return res.data as T;
+  }
+  const base = guessApiBase();
+  const url = new URL(path.startsWith('http') ? path : joinPath(base, path));
+  if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, String(v)));
+  const r = await fetch(url.toString());
+  if (!r.ok) throw new Error(`GET ${url} failed: ${r.status}`);
+  return (await r.json()) as T;
+}
+
+async function apiPost<T = any>(path: string, body?: any): Promise<T> {
+  if (client && typeof (client as any).post === 'function') {
+    const res = await (client as any).post(path, body);
+    return res.data as T;
+  }
+  const base = guessApiBase();
+  const url = path.startsWith('http') ? path : joinPath(base, path);
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) throw new Error(`POST ${url} failed: ${r.status}`);
+  const contentType = r.headers.get('content-type') || '';
+  return contentType.includes('application/json') ? r.json() : ({} as any);
+}
+
+// ---------- ui utils ----------
+const fmtMoney = (n?: number) =>
+  typeof n === 'number' && isFinite(n) ? `$${n.toFixed(2)}` : '—';
+const toneFromNumber = (n?: number) =>
+  typeof n === 'number' ? (n >= 0 ? 'positive' : 'negative') : undefined;
 
 export default function BotDetailScreen() {
-  const nav = useNavigation<any>();
-  const route = useRoute<any>();
-  const botId: string | undefined = route?.params?.id;
+  const navigation = useNavigation();
+  const route = useRoute<RouteProp<RootStackParamList, 'BotDetail'>>();
 
-  const [loading, setLoading] = useState(false);
-  const [meta, setMeta] = useState<BotMeta | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [cursor, setCursor] = useState<number>(0);
-  const [freeze, setFreeze] = useState<boolean>(false);
-  const [busy, setBusy] = useState<boolean>(false);
+  // accept multiple param shapes
+  const rawParams = (route.params ?? {}) as any;
+  const rawId: string | undefined = rawParams.botId ?? rawParams.id ?? rawParams.bot?.id;
+  const botId = sanitizeId(rawId);
 
-  const log = useCallback((...a: any[]) => console.log('[BotDetail]', new Date().toISOString(), ...a), []);
-  const scrollRef = useRef<ScrollView>(null);
+  const [data, setData] = useState<BotSummary | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
-  const idSafe = useMemo(() => String(botId || meta?.id || '').trim(), [botId, meta]);
+  const [lines, setLines] = useState<string[]>([]);
+  const [logsLoading, setLogsLoading] = useState<boolean>(true);
 
-  const fetchJson = useCallback(async (url: string) => {
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    const text = await res.text();
-    let json: any = null;
-    try { json = JSON.parse(text); } catch (e: any) {
-      throw new Error(`Failed to parse JSON from ${url}: ${String(e?.message || e)} (len=${text.length})`);
-    }
-    return { res, json };
-  }, []);
-
-  const loadMeta = useCallback(async () => {
-    if (!idSafe) return;
-    log('GET meta', `${API_BASE}/api/bots/${idSafe}`);
-    try {
-      const { res, json } = await fetchJson(`${API_BASE}/api/bots/${idSafe}`);
-      log('meta status', res.status);
-      if (res.ok) setMeta(json as BotMeta);
-      else throw new Error(`HTTP ${res.status}`);
-    } catch (e: any) {
-      log('meta error', String(e?.message || e));
-      setMeta(null);
-    }
-  }, [idSafe, fetchJson, log]);
-
-  const loadSummary = useCallback(async () => {
-    if (!idSafe) return;
-    log('GET summary', `${API_BASE}/api/bots/${idSafe}/summary`);
-    try {
-      const { res, json } = await fetchJson(`${API_BASE}/api/bots/${idSafe}/summary`);
-      log('summary status', res.status);
-      if (res.ok) setSummary(json as Summary);
-      else throw new Error(`HTTP ${res.status}`);
-    } catch (e: any) {
-      log('summary error', String(e?.message || e));
-      setSummary(null);
-    }
-  }, [idSafe, fetchJson, log]);
-
-  const loadLogs = useCallback(async () => {
-    if (!idSafe) return;
-    const url = `${API_BASE}/api/bots/${idSafe}/logs?cursor=${cursor}`;
-    log('GET logs', url);
-    try {
-      const res = await fetch(url, { headers: { Accept: 'application/json' } });
-      const text = await res.text();
-      let json: any = null;
-      try { json = JSON.parse(text); } catch (e: any) {
-        log('logs parse error', String(e?.message || e));
-        return;
-      }
-      const lines: string[] = Array.isArray(json?.lines) ? json.lines : [];
-      const nextCursor = Number(json?.cursor || 0);
-      setCursor(nextCursor);
-      if (lines.length) {
-        setLogs(prev => [...prev, ...lines]);
-        if (!freeze) {
-          requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
-        }
-      }
-      log('logs got', lines.length, 'cursor', nextCursor);
-    } catch (e: any) {
-      log('logs error', String(e?.message || e));
-    }
-  }, [idSafe, cursor, freeze, log]);
-
-  const refreshAll = useCallback(async () => {
-    if (!idSafe) return;
-    setLoading(true);
-    try {
-      await loadMeta();
-      await loadSummary();
-      await loadLogs();
-    } catch (e: any) {
-      // everything is already caught; this is just a belt-and-suspenders guard
-      log('refreshAll caught', String(e?.message || e));
-    } finally {
-      setLoading(false);
-    }
-  }, [idSafe, loadMeta, loadSummary, loadLogs, log]);
+  const isRunning = useMemo(
+    () => (data?.status ?? '').toLowerCase() === 'running',
+    [data?.status]
+  );
 
   useEffect(() => {
-    if (!idSafe) {
-      Alert.alert('No bot id', 'This screen requires a bot id.');
+    navigation.setOptions({ title: data?.name || botId || 'Bot' });
+  }, [navigation, data?.name, botId]);
+
+  // ----- data fetch -----
+  const fetchSummary = useCallback(async () => {
+    if (!botId) return;
+    try {
+      if (!refreshing) setLoading(true);
+      const res = await apiGet<BotSummary>(joinPath('/bots', botId, 'summary'));
+      setData(res);
+    } catch (e: any) {
+      const msg = (e?.response?.data as ApiError)?.message || e?.message || 'Failed to load summary';
+      Alert.alert('Load Failed', msg);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [botId, refreshing]);
+
+  const fetchLogs = useCallback(async (limit = 1000) => {
+    if (!botId) return;
+    try {
+      setLogsLoading(true);
+      const res = await apiGet<{ lines?: string[] }>(joinPath('/bots', botId, 'logs'), { limit });
+      setLines(Array.isArray(res?.lines) ? res.lines : []);
+    } catch {
+      setLines([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [botId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchSummary();
+      fetchLogs();
+
+      let cancelled = false;
+      let timer: NodeJS.Timeout | undefined;
+      const loop = () => {
+        const ms = isRunning ? 2000 : 6000;
+        timer = setTimeout(() => {
+          if (cancelled) return;
+          fetchSummary();
+          fetchLogs();
+          loop();
+        }, ms);
+      };
+      loop();
+      return () => {
+        cancelled = true;
+        if (timer) clearTimeout(timer);
+      };
+    }, [fetchSummary, fetchLogs, isRunning])
+  );
+
+  const onRefresh = useCallback(() => setRefreshing(true), []);
+  useEffect(() => {
+    if (refreshing) Promise.all([fetchSummary(), fetchLogs()]);
+  }, [refreshing, fetchSummary, fetchLogs]);
+
+  // ----- actions -----
+  const callAction = useCallback(async (action: 'start' | 'stop' | 'delete') => {
+    if (!botId) {
+      Alert.alert('Missing Bot Id', 'No bot id was provided to this screen.');
       return;
     }
-    log('API_BASE =>', JSON.stringify(API_BASE), 'id=', idSafe);
-    refreshAll().catch(err => log('initial refresh err', String(err)));
-    // Optional: small poll to keep summary live (stop when frozen)
-    const t = setInterval(() => { loadSummary().catch(() => {}); }, 5000);
-    return () => clearInterval(t);
-  }, [idSafe, refreshAll, loadSummary, log]);
-
-  const doStart = useCallback(async () => {
-    if (!idSafe) return;
     try {
-      setBusy(true);
-      log('POST start', `${API_BASE}/api/bots/${idSafe}/start`);
-      const res = await fetch(`${API_BASE}/api/bots/${idSafe}/start`, { method: 'POST' });
-      const text = await res.text();
-      log('start done', res.status, text.slice(0, 120));
-      if (!res.ok) Alert.alert('Start failed', text.slice(0, 800));
-      await refreshAll();
+      setSubmitting(true);
+
+      if (action === 'delete') {
+        const confirm = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Delete Bot',
+            'Are you sure you want to delete this bot?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
+            ],
+            { cancelable: true }
+          );
+        });
+        if (!confirm) return;
+      }
+
+      await apiPost(joinPath('/bots', botId, action));
+      // After delete, navigate back to list
+      if (action === 'delete') {
+        Alert.alert('Bot deleted', `Removed ${botId}`);
+        // @ts-expect-error - navigation type varies by app setup
+        navigation.goBack?.();
+        return;
+      }
+      await Promise.all([fetchSummary(), fetchLogs()]);
     } catch (e: any) {
-      log('start error', String(e?.message || e));
-      Alert.alert('Start failed', String(e?.message || e));
+      const msg = (e?.response?.data as ApiError)?.message || e?.message || 'Operation failed';
+      Alert.alert('Error', msg);
     } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
-  }, [idSafe, refreshAll, log]);
+  }, [botId, fetchSummary, fetchLogs, navigation]);
 
-  const doStop = useCallback(async () => {
-    if (!idSafe) return;
-    try {
-      setBusy(true);
-      log('POST stop', `${API_BASE}/api/bots/${idSafe}/stop`);
-      const res = await fetch(`${API_BASE}/api/bots/${idSafe}/stop`, { method: 'POST' });
-      const text = await res.text();
-      log('stop done', res.status, text.slice(0, 120));
-      if (!res.ok) Alert.alert('Stop failed', text.slice(0, 800));
-      await refreshAll();
-    } catch (e: any) {
-      log('stop error', String(e?.message || e));
-      Alert.alert('Stop failed', String(e?.message || e));
-    } finally {
-      setBusy(false);
-    }
-  }, [idSafe, refreshAll, log]);
+  const onStart = useCallback(() => callAction('start'), [callAction]);
+  const onStop = useCallback(() => callAction('stop'), [callAction]);
+  const onDelete = useCallback(() => callAction('delete'), [callAction]);
 
-  const doDelete = useCallback(async () => {
-    if (!idSafe) return;
-    Alert.alert('Delete Bot', 'This will delete the bot and its data. Continue?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            setBusy(true);
-            log('DELETE bot', `${API_BASE}/api/bots/${idSafe}`);
-            const res = await fetch(`${API_BASE}/api/bots/${idSafe}`, { method: 'DELETE' });
-            const text = await res.text();
-            log('delete done', res.status, text.slice(0, 120));
-            if (!res.ok) {
-              Alert.alert('Delete failed', text.slice(0, 800));
-            } else {
-              Alert.alert('Deleted', 'Bot deleted.', [{ text: 'OK', onPress: () => nav.goBack() }]);
-            }
-          } catch (e: any) {
-            log('delete error', String(e?.message || e));
-            Alert.alert('Delete failed', String(e?.message || e));
-          } finally {
-            setBusy(false);
-          }
-        },
-      },
-    ]);
-  }, [idSafe, nav, log]);
-
-  const statusText = meta?.status || summary?.status || 'unknown';
-  const bpv = summary?.beginningPortfolioValue ?? null;
-  const cur = summary?.currentPortfolioValue ?? null;
+  const s = data?.summary ?? {};
+  const strategyLabel = data?.strategyName || data?.strategyId || 'Unknown';
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0a0f1a' }}>
-      {/* Header row */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => nav.goBack()}><Text style={styles.link}>&lt; Bot List</Text></TouchableOpacity>
-        <View style={{ flexDirection: 'row' }}>
-          <TouchableOpacity onPress={() => refreshAll()}><Text style={styles.link}>Refresh</Text></TouchableOpacity>
-          <Text style={{ color: '#334155' }}>{'  '}</Text>
-          <TouchableOpacity onPress={() => nav.navigate('SignIn')}><Text style={styles.link}>Sign out</Text></TouchableOpacity>
-        </View>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      <View style={styles.headerRow}>
+        <Pill label={strategyLabel} />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
-        {/* Status + actions */}
-        <View style={styles.card}>
-          <Text style={styles.statusLine}>Status: <Text style={{ color: '#e5e7eb' }}>{statusText}</Text></Text>
-          <View style={{ flexDirection: 'row', marginTop: 8 }}>
-            <TouchableOpacity disabled={busy} style={styles.btnPrimary} onPress={doStart}><Text style={styles.btnPrimaryText}>Start</Text></TouchableOpacity>
-            <TouchableOpacity disabled={busy} style={styles.btn} onPress={doStop}><Text style={styles.btnText}>Stop</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.btn} onPress={() => setFreeze(f => !f)}><Text style={styles.btnText}>{freeze ? 'Unfreeze' : 'Freeze'}</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.btn} onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}><Text style={styles.btnText}>Jump to latest</Text></TouchableOpacity>
-          </View>
-          <TouchableOpacity disabled={busy} style={styles.btnDanger} onPress={doDelete}><Text style={styles.btnDangerText}>Delete</Text></TouchableOpacity>
-        </View>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Total Portfolio Summary</Text>
+        <KV label="Beginning Portfolio Value" value={fmtMoney(s.beginningPortfolioValue)} />
+        <KV label="Duration" value={String(s.duration ?? '—')} />
+        <KV label="Buys" value={String(s.buys ?? 0)} />
+        <KV label="Sells" value={String(s.sells ?? 0)} />
+        <KV label="Total P/L" value={fmtMoney(s.totalPL)} tone={toneFromNumber(s.totalPL)} />
+        <KV label="Cash" value={fmtMoney(s.cash)} />
+        <KV label="Crypto (mkt)" value={fmtMoney(s.cryptoMkt)} />
+        <KV label="Locked" value={fmtMoney(s.locked)} />
+        <KV label="Current Portfolio Value" value={fmtMoney(s.currentValue)} />
+      </View>
 
-        {/* Portfolio Summary */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Total Portfolio Summary</Text>
-          {loading && <ActivityIndicator style={{ marginTop: 8 }} />}
-          <View style={styles.row}><Text style={styles.key}>Beginning Portfolio Value</Text><Text style={styles.val}>{bpv == null ? '—' : `$${bpv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</Text></View>
-          <View style={styles.row}><Text style={styles.key}>Duration</Text><Text style={styles.val}>{summary?.duration ?? '—'}</Text></View>
-          <View style={styles.row}><Text style={styles.key}>Buys</Text><Text style={styles.val}>{summary?.buys ?? 0}</Text></View>
-          <View style={styles.row}><Text style={styles.key}>Sells</Text><Text style={styles.val}>{summary?.sells ?? 0}</Text></View>
-          <View style={styles.row}><Text style={styles.key}>Total P/L</Text><Text style={styles.val}>{summary?.totalPL == null ? '—' : `$${summary.totalPL.toFixed(2)}`}</Text></View>
-          <View style={styles.row}><Text style={styles.key}>Cash</Text><Text style={styles.val}>{summary?.cash == null ? '—' : `$${summary.cash.toFixed(2)}`}</Text></View>
-          <View style={styles.row}><Text style={styles.key}>Crypto (mkt)</Text><Text style={styles.val}>{summary?.cryptoMkt == null ? '—' : `$${summary.cryptoMkt.toFixed(2)}`}</Text></View>
-          <View style={styles.row}><Text style={styles.key}>Locked</Text><Text style={styles.val}>{summary?.locked == null ? '—' : `$${summary.locked.toFixed(2)}`}</Text></View>
-          <View style={styles.row}><Text style={[styles.key, { fontWeight: '700' }]}>Current Portfolio Value</Text><Text style={[styles.val, { fontWeight: '800' }]}>{cur == null ? '$0.00' : `$${cur.toFixed(2)}`}</Text></View>
-        </View>
+      <View style={styles.btnRow}>
+        <Pressable
+          style={[styles.btn, styles.primary, (submitting || isRunning) && styles.btnDisabled]}
+          onPress={onStart}
+          disabled={submitting || isRunning}
+        >
+          <Text style={styles.btnText}>Start</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.btn, (submitting || !isRunning) && styles.btnDisabled]}
+          onPress={onStop}
+          disabled={submitting || !isRunning}
+        >
+          <Text style={styles.btnText}>Stop</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.btn, styles.danger, (submitting || isRunning) && styles.btnDisabled]}
+          onPress={onDelete}
+          disabled={submitting || isRunning}
+        >
+          <Text style={styles.btnText}>Delete</Text>
+        </Pressable>
+      </View>
 
-        {/* Logs */}
-        <View style={[styles.card, { minHeight: 160 }]}>
-          <Text style={styles.cardTitle}>Logs</Text>
-          <ScrollView ref={scrollRef} style={{ marginTop: 8, maxHeight: 220 }}>
-            {logs.length === 0 ? (
-              <Text style={{ color: '#64748b' }}>No logs yet.</Text>
-            ) : (
-              logs.map((ln, idx) => (
-                <Text key={idx} style={{ color: '#9aa4b2', fontSize: 12, marginBottom: 2 }}>{ln}</Text>
-              ))
-            )}
-          </ScrollView>
-          <View style={{ flexDirection: 'row', marginTop: 8 }}>
-            <TouchableOpacity style={styles.btn} onPress={() => loadLogs().catch(() => {})}><Text style={styles.btnText}>Load more</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.btn} onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}><Text style={styles.btnText}>Jump to latest</Text></TouchableOpacity>
-          </View>
+      {loading ? (
+        <View style={styles.loaderWrap}>
+          <ActivityIndicator />
+          <Text style={styles.loaderText}>Loading summary…</Text>
         </View>
-      </ScrollView>
+      ) : null}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Logs</Text>
+        <View style={styles.logCard}>
+          <LogViewer
+            lines={Array.isArray(lines) ? lines : []}
+            follow
+            emptyText={logsLoading ? 'Loading logs…' : 'No log output yet…'}
+          />
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+function Pill({ label, muted = false }: { label: string; muted?: boolean }) {
+  const textColor = muted ? '#718096' : '#1a202c';
+  const bg = muted ? '#f7fafc' : '#e2e8f0';
+  return (
+    <View style={[styles.pill, { backgroundColor: bg }]}>
+      <View style={[styles.pillDot, { backgroundColor: muted ? '#a0aec0' : '#2d3748' }]} />
+      <Text style={[styles.pillText, { color: textColor }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function KV({ label, value, tone }: { label: string; value: string; tone?: 'positive' | 'negative' }) {
+  const toneStyle =
+    tone === 'positive' ? { color: '#22c55e' } : tone === 'negative' ? { color: '#ef4444' } : null;
+  return (
+    <View style={styles.kvRow}>
+      <Text style={styles.kvLabel}>{label}</Text>
+      <Text style={[styles.kvValue, toneStyle as any]}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  link: { color: '#60a5fa', fontWeight: '600' },
+  container: { flex: 1 },
+  content: { padding: 16, gap: 16 },
 
-  card: { borderRadius: 14, borderWidth: 1, borderColor: '#2a2f3a', backgroundColor: '#0b1220', padding: 12, marginBottom: 12 },
-  cardTitle: { color: '#e5e7eb', fontWeight: '700', marginBottom: 8 },
-  statusLine: { color: '#9aa4b2' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 
-  btn: { backgroundColor: '#111827', borderColor: '#1f2937', borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, marginRight: 8 },
-  btnText: { color: '#e5e7eb', fontWeight: '600' },
-  btnPrimary: { backgroundColor: '#1f6feb', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 14, marginRight: 8 },
-  btnPrimaryText: { color: 'white', fontWeight: '700' },
-  btnDanger: { backgroundColor: '#3f1d1d', borderColor: '#7f1d1d', borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, marginTop: 8, alignSelf: 'flex-start' },
-  btnDangerText: { color: '#fecaca', fontWeight: '700' },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+  },
+  pillDot: { width: 8, height: 8, borderRadius: 999, marginRight: 6 },
+  pillText: { fontWeight: '700' },
 
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  key: { color: '#9aa4b2' },
-  val: { color: '#e5e7eb' },
+  card: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+  },
+  cardTitle: { color: '#e2e8f0', fontWeight: '700', fontSize: 16, marginBottom: 8 },
+
+  kvRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  kvLabel: { color: '#cbd5e1' },
+  kvValue: { color: '#f8fafc', fontWeight: '600' },
+
+  btnRow: { flexDirection: 'row', gap: 12 },
+  btn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2d3748',
+  },
+  primary: { backgroundColor: '#2563eb' },
+  danger: { backgroundColor: '#dc2626' },
+  btnDisabled: { opacity: 0.5 },
+  btnText: { color: '#fff', fontWeight: '700' },
+
+  loaderWrap: { paddingVertical: 12, alignItems: 'center', gap: 8 },
+  loaderText: { color: '#a0aec0' },
+
+  section: { marginTop: 8 },
+  sectionTitle: { color: '#e2e8f0', fontWeight: '700', fontSize: 16, marginBottom: 8 },
+
+  logCard: {
+    minHeight: 160,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    backgroundColor: '#0b1220',
+  },
 });

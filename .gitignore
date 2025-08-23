@@ -1,9 +1,12 @@
 # ---------------------------------------
-# Environment & secrets
+# Environment & secrets (any package)
 # ---------------------------------------
+# .env files anywhere
 .env
 .env.*
 *.env
+
+# Keys / certificates
 *.pem
 *.crt
 *.cer
@@ -14,17 +17,21 @@
 *.pfx
 *.jks
 *.keystore
-rh_session.json
+
+# Project-specific secrets / sessions
+**/rh_session.json
 .ed25519_key
 ed25519_seed.txt
+ed25519_pub_base64.txt
 backend/private.pem
+backend/robinhood_ed25519*
+# (above covers the robinhood_ed25519 dir and robinhood_ed25519.pub)
 
 # ---------------------------------------
 # Dependencies (all packages)
 # ---------------------------------------
 **/node_modules/
-# If you use Yarn Berry, DO NOT ignore .yarn/
-# (The .yarn/cache is intentionally committed with PnP)
+# If you use Yarn Berry, DO NOT ignore .yarn/ (keep cache if needed)
 
 # ---------------------------------------
 # Build outputs / bundles / coverage
@@ -44,8 +51,8 @@ coverage/
 # ---------------------------------------
 # App/platform caches
 # ---------------------------------------
-.expo/
-.expo-shared/
+**/.expo/
+**/.expo-shared/
 .next/
 .cache/
 .parcel-cache/
@@ -54,7 +61,7 @@ coverage/
 .swc/
 .eslintcache
 
-# React Native (optional — remove if you commit native projects)
+# React Native native projects (ignore if not checked in)
 android/
 ios/
 Pods/
@@ -67,24 +74,31 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-logs/
-**/logs/
+
+# Runtime data & logs (project-specific)
 backend/data/
-backend/Backup_Old_Files/
-Archive/
-Backup_Old_Files/
+backend/logs/
+control-plane/backend/data/
+
+# Historical/backup/archives (project-specific)
+**/Archive/
+**/Backup_Old_Files/
+
+# Generated or local runtime JSON (project-specific)
+backend/portfolio.json
+backend/trades.json
 
 # ---------------------------------------
 # Editors / OS cruft
 # ---------------------------------------
 .vscode/
 .idea/
-.DS_Store
+**/.DS_Store
 Thumbs.db
 Desktop.ini
 
 # ---------------------------------------
-# Python (if any backend scripts)
+# Python artifacts (used in backend/Archive/* tools)
 # ---------------------------------------
 __pycache__/
 *.pyc

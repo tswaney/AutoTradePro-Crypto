@@ -1,7 +1,7 @@
 // mobile/App.tsx
 import React, { useCallback, useEffect, useState } from "react";
 import { StatusBar, View, Text, Pressable, FlatList, ActivityIndicator, RefreshControl, StyleSheet } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, useFocusEffect } from "@react-navigation/native";
 import { createNativeStackNavigator, NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
 
@@ -52,6 +52,12 @@ function HomeScreen({ navigation }: HomeProps) {
 
   useEffect(() => { fetchBots(); }, [fetchBots]);
 
+  // Re-fetch whenever we return to Home (e.g., after creating a bot)
+  useFocusEffect(React.useCallback(() => {
+    fetchBots();
+    return () => {};
+  }, [fetchBots]));
+
   useEffect(() => {
     navigation.setOptions({
       title: "Bots",
@@ -71,8 +77,9 @@ function HomeScreen({ navigation }: HomeProps) {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={{ flex: 1, backgroundColor: "#0B1117", alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator />
+        <Text style={{ color: "#97A3B6", marginTop: 10 }}>Loading…</Text>
       </View>
     );
   }
@@ -98,7 +105,6 @@ function HomeScreen({ navigation }: HomeProps) {
   );
 }
 
-// -------------------- App root --------------------
 export default function App() {
   return (
     <NavigationContainer>
@@ -142,7 +148,6 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0B1117" },
   botRow: {
     flexDirection: "row",
     alignItems: "center",

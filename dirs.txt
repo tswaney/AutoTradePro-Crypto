@@ -42,16 +42,15 @@
 │   ├── cryptoBuyingPower.js
 │   ├── data
 │   │   ├── .DS_Store
-│   │   ├── bot-347ds
-│   │   │   └── meta.json
-│   │   ├── bot-uifie
-│   │   │   └── meta.json
 │   │   ├── default
 │   │   │   ├── cryptoHoldings.json
-│   │   │   └── testPrice_output.txt
+│   │   │   ├── testPrice_output.txt
+│   │   │   └── testPrice_output.txt.zip
 │   │   ├── local-test
 │   │   │   └── testPrice_output.txt
-│   │   └── strat-moderate-btc
+│   │   ├── strat-moderate-btc
+│   │   │   └── testPrice_output.txt
+│   │   └── Test
 │   │       └── testPrice_output.txt
 │   ├── Dockerfile
 │   ├── ed25519_pub_base64.txt
@@ -100,6 +99,8 @@
 ├── control-plane
 │   ├── .DS_Store
 │   ├── .env
+│   ├── backend
+│   │   └── data
 │   ├── package-lock.json
 │   ├── package.json
 │   ├── PERSISTENCE_README.md
@@ -109,13 +110,19 @@
 │       ├── .env
 │       ├── auth.js
 │       ├── index.js
+│       ├── lib
+│       │   └── configResolver.js
 │       ├── localRunner.js
 │       ├── localRunner.ts
+│       ├── logParser.js
 │       ├── persistence.js
-│       └── routes
-│           ├── .DS_Store
-│           ├── bots.js
-│           └── strategies.js
+│       ├── routes
+│       │   ├── .DS_Store
+│       │   ├── bots.js
+│       │   └── strategies.js
+│       └── utils
+│           └── configResolver.js
+├── dirs.txt
 ├── Docs
 │   ├── .DS_Store
 │   ├── Archive_Trading_Strategy_Docs.zip
@@ -159,6 +166,9 @@
 │   ├── src
 │   │   ├── components
 │   │   │   ├── __tests__
+│   │   │   │   ├── __snapshots__
+│   │   │   │   │   └── ThemedText-test.tsx.snap
+│   │   │   │   └── ThemedText-test.tsx
 │   │   │   ├── BotCard.js
 │   │   │   ├── Collapsible.tsx
 │   │   │   ├── ExternalLink.tsx
@@ -168,6 +178,10 @@
 │   │   │   ├── ThemedText.tsx
 │   │   │   ├── ThemedView.tsx
 │   │   │   └── ui
+│   │   │       ├── IconSymbol.ios.tsx
+│   │   │       ├── IconSymbol.tsx
+│   │   │       ├── TabBarBackground.ios.tsx
+│   │   │       └── TabBarBackground.tsx
 │   │   ├── screens
 │   │   │   └── HomeScreen.js
 │   │   ├── services
@@ -176,64 +190,65 @@
 │   │   └── utils
 │   │       └── formatters.js
 │   └── tsconfig.json
-├── mobile
-│   ├── .DS_Store
-│   ├── .env
-│   ├── api.ts
-│   ├── app.json
-│   ├── App.tsx
-│   ├── Archive
-│   │   ├── .DS_Store
-│   │   ├── api.ts
-│   │   ├── App.js
-│   │   ├── BotHub.jsx
-│   │   ├── Logs.jsx
-│   │   └── PortfolioSummary.jsx
-│   ├── assets
-│   │   ├── adaptive-icon.png
-│   │   └── icon.png
-│   ├── index.js
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── README.md
-│   ├── src
-│   │   ├── .DS_Store
-│   │   ├── api
-│   │   │   ├── .DS_Store
-│   │   │   └── client.ts
-│   │   ├── auth
-│   │   │   ├── .DS_Store
-│   │   │   └── b2c.ts
-│   │   ├── client.ts
-│   │   ├── components
-│   │   │   ├── _archive
-│   │   │   ├── .DS_Store
-│   │   │   ├── BotCard.tsx
-│   │   │   ├── HeaderActions.tsx
-│   │   │   ├── LogViewer.tsx
-│   │   │   ├── Snack.tsx
-│   │   │   ├── SummaryBlock.tsx
-│   │   │   └── VirtualLogList.tsx
-│   │   ├── config.ts
-│   │   ├── hooks
-│   │   │   ├── .DS_Store
-│   │   │   └── useAsyncAction.ts
-│   │   ├── screens
-│   │   │   ├── .DS_Store
-│   │   │   ├── Auth_Email_Pass.tsx
-│   │   │   ├── Auth.tsx
-│   │   │   ├── BotDetailScreen.tsx
-│   │   │   ├── NewBotConfigScreen.tsx
-│   │   │   ├── NewBotScreen.tsx
-│   │   │   └── SignInScreen.tsx
-│   │   ├── store
-│   │   │   ├── botsSlice.ts
-│   │   │   └── index.ts
-│   │   ├── strategyOptions.json
-│   │   ├── theme
-│   │   │   └── designSystem.ts
-│   │   └── types.ts
-│   └── tsconfig.json
-└── repo_tree.txt
+└── mobile
+    ├── .DS_Store
+    ├── .env
+    ├── 08182025_api.ts
+    ├── api.ts
+    ├── app.json
+    ├── App.tsx
+    ├── Archive
+    │   ├── .DS_Store
+    │   ├── api.ts
+    │   ├── App.js
+    │   ├── BotHub.jsx
+    │   ├── Logs.jsx
+    │   └── PortfolioSummary.jsx
+    ├── assets
+    │   ├── adaptive-icon.png
+    │   └── icon.png
+    ├── index.js
+    ├── package-lock.json
+    ├── package.json
+    ├── README.md
+    ├── src
+    │   ├── .DS_Store
+    │   ├── api
+    │   │   ├── .DS_Store
+    │   │   └── client.ts
+    │   ├── auth
+    │   │   ├── .DS_Store
+    │   │   └── b2c.ts
+    │   ├── client.ts
+    │   ├── components
+    │   │   ├── _archive
+    │   │   ├── .DS_Store
+    │   │   ├── BotCard.tsx
+    │   │   ├── HeaderActions.tsx
+    │   │   ├── LogViewer.tsx
+    │   │   ├── Snack.tsx
+    │   │   ├── SummaryBlock.tsx
+    │   │   └── VirtualLogList.tsx
+    │   ├── config.ts
+    │   ├── hooks
+    │   │   ├── .DS_Store
+    │   │   └── useAsyncAction.ts
+    │   ├── screens
+    │   │   ├── .DS_Store
+    │   │   ├── Auth_Email_Pass.tsx
+    │   │   ├── Auth.tsx
+    │   │   ├── BotDetailScreen.tsx
+    │   │   ├── BotsScreen.tsx
+    │   │   ├── NewBotConfigScreen.tsx
+    │   │   ├── NewBotScreen.tsx
+    │   │   └── SignInScreen.tsx
+    │   ├── store
+    │   │   ├── botsSlice.ts
+    │   │   └── index.ts
+    │   ├── strategyOptions.json
+    │   ├── theme
+    │   │   └── designSystem.ts
+    │   └── types.ts
+    └── tsconfig.json
 
-49 directories, 188 files
+53 directories, 199 files
