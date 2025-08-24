@@ -1,7 +1,7 @@
 [
   {
-    "id": "bot-wl1p",
-    "name": "bot-wl1p",
+    "id": "bot-i43u",
+    "name": "bot-i43u",
     "status": "stopped",
     "symbols": "BTCUSD,SOLUSD",
     "strategyId": "ultimateSafetyProfitStrategy",
@@ -17,7 +17,7 @@
       "drawDownBrake": 0.15,
       "slippage": 0.001
     },
-    "createdAt": "2025-08-24T14:10:53.845Z",
-    "updatedAt": "2025-08-24T14:15:18.813Z"
+    "createdAt": "2025-08-24T18:27:12.154Z",
+    "updatedAt": "2025-08-24T18:27:23.232Z"
   }
 ]

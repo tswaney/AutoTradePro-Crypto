@@ -1,9 +1,7 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
-  ListRenderItemInfo,
   RefreshControl,
   StyleSheet,
   Text,
@@ -12,191 +10,221 @@ import {
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 
-type BotSummary = {
-  id: string;
-  name: string;
-  status?: "running" | "stopped" | "unknown";
-};
-
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:4000";
 
-/**
- * Try hard to get a list of bots from any server response:
- * - JSON array: [{id,name,...}]
- * - JSON object with { bots: [...] }
- * - Plain text that contains bot IDs (e.g., "bot-abc\nbot-xyz")
- */
-async function parseBotsResponse(res: Response): Promise<BotSummary[]> {
-  const text = await res.text();
+type Bot = {
+  id: string;
+  name?: string;
+  status?: "running" | "stopped" | string;
+  strategyId?: string;
+  strategyName?: string;
+};
 
-  // 1) Try JSON first
+type Summary = {
+  totalPL?: number | null;
+  locked?: number | null;
+  currentValue?: number | null;
+};
+
+type SummaryResp = {
+  id: string;
+  name?: string;
+  status?: string;
+  strategyId?: string;
+  strategyName?: string;
+  summary?: Summary;
+};
+
+function money(v?: number | null) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
   try {
-    const data = JSON.parse(text);
-    if (Array.isArray(data)) {
-      return data.map((b: any) => ({
-        id: String(b.id ?? b.name ?? ""),
-        name: String(b.name ?? b.id ?? ""),
-        status: (b.status as any) ?? "unknown",
-      })).filter(b => b.id);
-    }
-    if (data && Array.isArray((data as any).bots)) {
-      return (data as any).bots
-        .map((b: any) => ({
-          id: String(b.id ?? b.name ?? ""),
-          name: String(b.name ?? b.id ?? ""),
-          status: (b.status as any) ?? "unknown",
-        }))
-        .filter((b: BotSummary) => b.id);
-    }
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    }).format(v);
   } catch {
-    // not JSON, fall through to text parsing
+    return `$${Number(v).toFixed(2)}`;
   }
-
-  // 2) Text fallback: extract all tokens that look like bot IDs
-  const ids = Array.from(new Set((text.match(/bot-[a-zA-Z0-9_-]+/g) ?? [])));
-  if (ids.length > 0) {
-    return ids.map((id) => ({ id, name: id, status: "unknown" as const }));
-  }
-
-  // 3) Give up—return empty
-  return [];
 }
 
 export default function BotsScreen() {
-  const navigation = useNavigation<any>();
-  const [bots, setBots] = useState<BotSummary[] | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const nav = useNavigation<any>();
+  const [bots, setBots] = useState<Bot[]>([]);
+  const [summaries, setSummaries] = useState<Record<string, Summary>>({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchBots = useCallback(async (isRefresh = false) => {
+  const fetchBots = useCallback(async () => {
+    setLoading(true);
     try {
-      if (abortRef.current) abortRef.current.abort();
-      const ac = new AbortController();
-      abortRef.current = ac;
-
-      if (!isRefresh) setLoading(true);
-      else setRefreshing(true);
-
-      const res = await fetch(`${API_BASE}/api/bots`, { signal: ac.signal });
-      if (!res.ok) throw new Error(`List failed: ${res.status}`);
-
-      const list = await parseBotsResponse(res);
-      setBots(list);
-    } catch (err: any) {
-      if (err?.name === "AbortError") return;
-      console.warn("fetchBots error:", err);
-      Alert.alert("Error", `Failed to load bots.\n${String(err?.message ?? err)}`);
-      setBots([]); // avoid spinner loop
+      const r = await fetch(`${API_BASE}/api/bots`);
+      if (!r.ok) throw new Error(`GET /api/bots -> ${r.status}`);
+      const data: Bot[] = await r.json();
+      setBots(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.warn("fetchBots:", e);
+      setBots([]);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
-  // Refetch whenever this screen gains focus (e.g., after NewBotConfigScreen pops back)
+  const fetchSummaries = useCallback(async (list: Bot[]) => {
+    if (!list.length) {
+      setSummaries({});
+      return;
+    }
+    try {
+      const pairs = await Promise.all(
+        list.map(async (b) => {
+          try {
+            const r = await fetch(`${API_BASE}/api/bots/${b.id}/summary`);
+            if (!r.ok) throw new Error(`summary ${b.id} -> ${r.status}`);
+            const js: SummaryResp = await r.json();
+            return [b.id, js.summary ?? {}] as const;
+          } catch (e) {
+            // keep previous if any
+            return [b.id, summaries[b.id] ?? {}] as const;
+          }
+        })
+      );
+      setSummaries(Object.fromEntries(pairs));
+    } catch (e) {
+      console.warn("fetchSummaries:", e);
+    }
+  }, [summaries]);
+
+  const loadAll = useCallback(async () => {
+    await fetchBots();
+  }, [fetchBots]);
+
+  // when bots change, load summaries
+  useEffect(() => {
+    fetchSummaries(bots);
+  }, [bots, fetchSummaries]);
+
+  // focus & polling
   useFocusEffect(
     useCallback(() => {
-      fetchBots(false);
+      loadAll();
+      pollRef.current = setInterval(() => {
+        // light-weight: refresh summaries only
+        fetchSummaries(bots.length ? bots : []);
+      }, 3000);
       return () => {
-        if (abortRef.current) abortRef.current.abort();
+        if (pollRef.current) clearInterval(pollRef.current);
       };
-    }, [fetchBots])
+    }, [loadAll, fetchSummaries, bots.length])
   );
 
-  const onRefresh = useCallback(() => fetchBots(true), [fetchBots]);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadAll();
+    setRefreshing(false);
+  }, [loadAll]);
 
-  const keyExtractor = useCallback((item: BotSummary) => item.id, []);
+  const onOpen = useCallback(
+    (b: Bot) => {
+      nav.navigate("BotDetail", {
+        botId: b.id,
+        botName: b.name ?? b.id,
+        strategyId: b.strategyId,
+        strategyName: b.strategyName,
+      });
+    },
+    [nav]
+  );
+
   const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<BotSummary>) => (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => navigation.navigate("BotDetail", { botId: item.id })}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.name || item.id}
-          </Text>
-          <View
-            style={[
-              styles.dot,
-              item.status === "running"
-                ? styles.dotRunning
-                : item.status === "stopped"
-                ? styles.dotStopped
-                : styles.dotUnknown,
-            ]}
-          />
-        </View>
-        <Text style={styles.cardSub} numberOfLines={1}>
-          {item.id}
-        </Text>
-      </TouchableOpacity>
-    ),
-    [navigation]
+    ({ item }: { item: Bot }) => {
+      const s = summaries[item.id] ?? {};
+      return (
+        <TouchableOpacity onPress={() => onOpen(item)} style={styles.card} activeOpacity={0.8}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+            <Text style={styles.title}>{item.name ?? item.id}</Text>
+            <Text style={[styles.status, item.status === "running" ? styles.ok : styles.dim]}>
+              {item.status ?? "—"}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>Total P/L</Text>
+            <Text style={styles.value}>{money(s.totalPL)}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Locked</Text>
+            <Text style={styles.value}>{money(s.locked)}</Text>
+          </View>
+          <View style={styles.rowLast}>
+            <Text style={styles.label}>Current Portfolio Value</Text>
+            <Text style={styles.value}>{money(s.currentValue)}</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    [onOpen, summaries]
   );
 
-  if (loading && !bots) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.dim}>Loading bots…</Text>
+  const empty = useMemo(
+    () => (
+      <View style={styles.emptyBox}>
+        {loading ? (
+          <>
+            <ActivityIndicator />
+            <Text style={styles.dim}>Loading bots…</Text>
+          </>
+        ) : (
+          <Text style={styles.dim}>No bots yet.</Text>
+        )}
       </View>
-    );
-  }
-
-  const listEmpty = !bots || bots.length === 0;
+    ),
+    [loading]
+  );
 
   return (
-    <View style={styles.container}>
-      {listEmpty ? (
-        <View style={styles.center}>
-          <Text style={styles.dim}>No bots yet.</Text>
-          <Text style={styles.dimSmall}>Create one from “New Bot”.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={bots}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          contentContainerStyle={{ padding: 16 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        />
-      )}
+    <View style={{ flex: 1, padding: 16 }}>
+      <FlatList
+        data={bots}
+        keyExtractor={(x) => x.id}
+        renderItem={renderItem}
+        ListEmptyComponent={empty}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9fb0c3" />}
+        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  dim: { color: "#96a0ad" },
-  dimSmall: { color: "#96a0ad", fontSize: 12 },
   card: {
-    backgroundColor: "#121a22",
+    backgroundColor: "#0f1620",
     borderRadius: 14,
     padding: 14,
-    marginBottom: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.08)",
   },
-  cardHeader: { flexDirection: "row", alignItems: "center" },
-  cardTitle: { flex: 1, color: "white", fontWeight: "600", fontSize: 16 },
-  cardSub: { color: "#91a0b0", marginTop: 6, fontSize: 12 },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginLeft: 8,
+  title: { color: "white", fontWeight: "700", fontSize: 16 },
+  status: { fontWeight: "700", fontSize: 12 },
+  ok: { color: "#22c55e" },
+  dim: { color: "#8ea0b2" },
+
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.06)",
   },
-  dotRunning: { backgroundColor: "#22c55e" },
-  dotStopped: { backgroundColor: "#ef4444" },
-  dotUnknown: { backgroundColor: "#6b7280" },
+  rowLast: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingTop: 8,
+  },
+  label: { color: "#9fb0c3" },
+  value: { color: "white", fontWeight: "700" },
+
+  emptyBox: { alignItems: "center", justifyContent: "center", marginTop: 60, gap: 10 },
 });
