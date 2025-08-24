@@ -8,34 +8,15 @@ import {
   Text,
   TextInput,
   View,
-  TouchableOpacity, // <-- from react-native (fix)
+  TouchableOpacity,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type StrategyField =
-  | {
-      key: string;
-      label: string;
-      type: "string";
-      default?: string;
-    }
-  | {
-      key: string;
-      label: string;
-      type: "number";
-      step?: number;
-      min?: number;
-      max?: number;
-      default?: number;
-    }
-  | {
-      key: string;
-      label: string;
-      type: "enum";
-      options: string[];
-      default?: string;
-    };
+  | { key: string; label: string; type: "string"; default?: string }
+  | { key: string; label: string; type: "number"; step?: number; min?: number; max?: number; default?: number }
+  | { key: string; label: string; type: "enum"; options: string[]; default?: string };
 
 type StrategyConfig = {
   id: string;
@@ -56,16 +37,25 @@ export default function NewBotConfigScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
-  const picked = route.params?.pickedStrategy as
-    | { id: string; name?: string }
-    | undefined;
+  // accept either { pickedStrategy: {id,...} } or a direct { strategyId }
+  const initialStrategyId: string | undefined =
+    route.params?.pickedStrategy?.id ?? route.params?.strategyId;
 
   const [name, setName] = useState(`bot-${randomSuffix()}`);
   const [symbols, setSymbols] = useState("BTCUSD, SOLUSD");
-  const [strategyId, setStrategyId] = useState<string | undefined>(picked?.id);
+  const [strategyId, setStrategyId] = useState<string | undefined>(initialStrategyId);
   const [schema, setSchema] = useState<StrategyConfig | null>(null);
   const [values, setValues] = useState<Record<string, any>>({});
   const [busy, setBusy] = useState(false);
+
+  // If we somehow got here without a strategy, guide the user back gracefully
+  useEffect(() => {
+    if (!strategyId) {
+      Alert.alert("Pick a strategy", "Please select a strategy first.", [
+        { text: "OK", onPress: () => navigation.goBack() },
+      ]);
+    }
+  }, [strategyId, navigation]);
 
   // fetch strategy schema (fields/defaults)
   useEffect(() => {
@@ -79,7 +69,6 @@ export default function NewBotConfigScreen() {
         if (!mounted) return;
         setSchema(cfg);
 
-        // seed defaults for dynamic form
         const seeded: Record<string, any> = {};
         (cfg.fields ?? []).forEach((f) => {
           if (f.type === "number") {
@@ -101,9 +90,7 @@ export default function NewBotConfigScreen() {
       }
     }
     run();
-    return () => {
-      mounted = false;
-    };
+    return () => {};
   }, [strategyId]);
 
   const canCreate = !!strategyId && name.trim().length > 0 && symbols.trim().length > 0;
@@ -111,6 +98,17 @@ export default function NewBotConfigScreen() {
   const onChangeValue = useCallback((k: string, v: string) => {
     setValues((s) => ({ ...s, [k]: v }));
   }, []);
+
+  // robust "back to bots" that does not depend on route names
+  const goBackToBots = useCallback(() => {
+    // First try to pop this stack back to its first screen (your Bots list).
+    navigation.popToTop?.();
+
+    // In case this screen sits inside a child navigator,
+    // try to also pop the parent stack to top (no-op if absent).
+    const parent = (navigation as any).getParent?.();
+    parent?.popToTop?.();
+  }, [navigation]);
 
   const onCreate = useCallback(async () => {
     if (!canCreate || !strategyId) return;
@@ -138,10 +136,8 @@ export default function NewBotConfigScreen() {
         {
           text: "OK",
           onPress: () => {
-            // Navigate to the Bots list; it refetches on focus.
-            setTimeout(() => {
-              navigation.navigate("Bots");
-            }, 50);
+            // Let the alert fully close, then pop back to the top.
+            setTimeout(goBackToBots, 50);
           },
         },
       ]);
@@ -151,7 +147,7 @@ export default function NewBotConfigScreen() {
     } finally {
       setBusy(false);
     }
-  }, [canCreate, strategyId, name, symbols, values, navigation]);
+  }, [canCreate, strategyId, name, symbols, values, goBackToBots]);
 
   return (
     <SafeAreaView style={{ flex: 1 }}>
@@ -160,10 +156,7 @@ export default function NewBotConfigScreen() {
         behavior={Platform.select({ ios: "padding", android: undefined })}
         keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <Text style={styles.h1}>Configure Bot</Text>
 
           {/* Strategy (read-only id chosen in prior screen) */}
@@ -251,18 +244,8 @@ export default function NewBotConfigScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 80 },
-  h1: {
-    color: "white",
-    fontWeight: "700",
-    fontSize: 22,
-    marginBottom: 12,
-  },
-  label: {
-    color: "#9aa8b5",
-    fontSize: 13,
-    marginBottom: 6,
-    marginTop: 10,
-  },
+  h1: { color: "white", fontWeight: "700", fontSize: 22, marginBottom: 12 },
+  label: { color: "#9aa8b5", fontSize: 13, marginBottom: 6, marginTop: 10 },
   input: {
     backgroundColor: "#131b24",
     color: "white",
@@ -272,9 +255,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.06)",
   },
-  disabled: {
-    opacity: 0.7,
-  },
+  disabled: { opacity: 0.7 },
   footer: {
     flexDirection: "row",
     gap: 12,
@@ -290,19 +271,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  btnGhost: {
-    backgroundColor: "#10151c",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  btnPrimary: {
-    backgroundColor: "#2563eb",
-  },
-  btnDisabled: {
-    backgroundColor: "#233044",
-  },
-  btnText: {
-    color: "white",
-    fontWeight: "600",
-  },
+  btnGhost: { backgroundColor: "#10151c", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.12)" },
+  btnPrimary: { backgroundColor: "#2563eb" },
+  btnDisabled: { backgroundColor: "#233044" },
+  btnText: { color: "white", fontWeight: "600" },
 });

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "bot-wl1p",
+    "name": "bot-wl1p",
+    "status": "stopped",
+    "symbols": "BTCUSD,SOLUSD",
+    "strategyId": "ultimateSafetyProfitStrategy",
+    "config": {
+      "dynamicMode": "on",
+      "atrLength": 2,
+      "buyThresholdATR": 0.05,
+      "sellThresholdATR": 0.05,
+      "priorityCryptos": "BTC,ETH,XRP,BONK,POPCAT",
+      "riskSpreadPerCrypto": 0.33,
+      "reinvestmentCap": 0.2,
+      "confirmTicks": 3,
+      "drawDownBrake": 0.15,
+      "slippage": 0.001
+    },
+    "createdAt": "2025-08-24T14:10:53.845Z",
+    "updatedAt": "2025-08-24T14:15:18.813Z"
+  }
+]

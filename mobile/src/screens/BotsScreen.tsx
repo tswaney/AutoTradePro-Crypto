@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,48 @@ type BotSummary = {
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:4000";
 
+/**
+ * Try hard to get a list of bots from any server response:
+ * - JSON array: [{id,name,...}]
+ * - JSON object with { bots: [...] }
+ * - Plain text that contains bot IDs (e.g., "bot-abc\nbot-xyz")
+ */
+async function parseBotsResponse(res: Response): Promise<BotSummary[]> {
+  const text = await res.text();
+
+  // 1) Try JSON first
+  try {
+    const data = JSON.parse(text);
+    if (Array.isArray(data)) {
+      return data.map((b: any) => ({
+        id: String(b.id ?? b.name ?? ""),
+        name: String(b.name ?? b.id ?? ""),
+        status: (b.status as any) ?? "unknown",
+      })).filter(b => b.id);
+    }
+    if (data && Array.isArray((data as any).bots)) {
+      return (data as any).bots
+        .map((b: any) => ({
+          id: String(b.id ?? b.name ?? ""),
+          name: String(b.name ?? b.id ?? ""),
+          status: (b.status as any) ?? "unknown",
+        }))
+        .filter((b: BotSummary) => b.id);
+    }
+  } catch {
+    // not JSON, fall through to text parsing
+  }
+
+  // 2) Text fallback: extract all tokens that look like bot IDs
+  const ids = Array.from(new Set((text.match(/bot-[a-zA-Z0-9_-]+/g) ?? [])));
+  if (ids.length > 0) {
+    return ids.map((id) => ({ id, name: id, status: "unknown" as const }));
+  }
+
+  // 3) Give up—return empty
+  return [];
+}
+
 export default function BotsScreen() {
   const navigation = useNavigation<any>();
   const [bots, setBots] = useState<BotSummary[] | null>(null);
@@ -36,26 +78,23 @@ export default function BotsScreen() {
       if (!isRefresh) setLoading(true);
       else setRefreshing(true);
 
-      // Minimal list endpoint: GET /api/bots
-      // Fallback: if your control-plane only has /api/bots/:id/summary,
-      // keep this list call — your server already exposes /api/bots (per previous steps).
       const res = await fetch(`${API_BASE}/api/bots`, { signal: ac.signal });
       if (!res.ok) throw new Error(`List failed: ${res.status}`);
-      const data = (await res.json()) as BotSummary[] | { bots?: BotSummary[] };
 
-      const list = Array.isArray(data) ? data : data?.bots ?? [];
+      const list = await parseBotsResponse(res);
       setBots(list);
     } catch (err: any) {
       if (err?.name === "AbortError") return;
       console.warn("fetchBots error:", err);
       Alert.alert("Error", `Failed to load bots.\n${String(err?.message ?? err)}`);
+      setBots([]); // avoid spinner loop
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  // Refetch whenever this screen gains focus (coming back from "Create Bot", etc.)
+  // Refetch whenever this screen gains focus (e.g., after NewBotConfigScreen pops back)
   useFocusEffect(
     useCallback(() => {
       fetchBots(false);
@@ -69,33 +108,31 @@ export default function BotsScreen() {
 
   const keyExtractor = useCallback((item: BotSummary) => item.id, []);
   const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<BotSummary>) => {
-      return (
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => navigation.navigate("BotDetail", { botId: item.id })}
-        >
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {item.name || item.id}
-            </Text>
-            <View
-              style={[
-                styles.dot,
-                item.status === "running"
-                  ? styles.dotRunning
-                  : item.status === "stopped"
-                  ? styles.dotStopped
-                  : styles.dotUnknown,
-              ]}
-            />
-          </View>
-          <Text style={styles.cardSub} numberOfLines={1}>
-            {item.id}
+    ({ item }: ListRenderItemInfo<BotSummary>) => (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => navigation.navigate("BotDetail", { botId: item.id })}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.name || item.id}
           </Text>
-        </TouchableOpacity>
-      );
-    },
+          <View
+            style={[
+              styles.dot,
+              item.status === "running"
+                ? styles.dotRunning
+                : item.status === "stopped"
+                ? styles.dotStopped
+                : styles.dotUnknown,
+            ]}
+          />
+        </View>
+        <Text style={styles.cardSub} numberOfLines={1}>
+          {item.id}
+        </Text>
+      </TouchableOpacity>
+    ),
     [navigation]
   );
 

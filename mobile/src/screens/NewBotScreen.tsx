@@ -1,174 +1,191 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
   Alert,
+  FlatList,
+  ListRenderItemInfo,
+  RefreshControl,
   StyleSheet,
-} from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-
-// If you have a central util, swap this for that import.
-const API_BASE = (process.env.EXPO_PUBLIC_API_BASE as string) || 'http://localhost:4000';
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useNavigation } from "@react-navigation/native";
 
 type Strategy = {
   id: string;
-  name: string;
-  version: string;
+  name?: string;
+  title?: string;
   description?: string;
 };
 
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:4000";
+
 export default function NewBotScreen() {
-  const nav = useNavigation<any>();
-  const [name] = useState<string>(`bot-${Math.random().toString(36).slice(2, 6)}`);
-  const [symbols] = useState<string>('BTCUSD, SOLUSD');
-
-  const [loading, setLoading] = useState(false);
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const navigation = useNavigation<any>();
+  const [strategies, setStrategies] = useState<Strategy[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const log = useCallback((...a: any[]) => console.log('[NewBot]', new Date().toISOString(), ...a), []);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setStrategies([]);
-    setSelectedId(null);
+  const load = useCallback(async (isRefresh = false) => {
     try {
-      const url = `${API_BASE}/api/strategies`;
-      log('GET strategies', JSON.stringify(url));
-      const res = await fetch(url, { headers: { Accept: 'application/json' } });
-      const text = await res.text();
-      log('strategies status', res.status, 'textLen', text.length);
-      let json: any = null;
-      try { json = JSON.parse(text); } catch (e: any) { log('parse error', String(e?.message || e)); }
-      if (Array.isArray(json)) {
-        const list: Strategy[] = json.map((s: any) => ({
-          id: String(s?.id ?? ''),
-          name: String(s?.name ?? ''),
-          version: String(s?.version ?? ''),
-          description: typeof s?.description === 'string' ? s.description : '',
-        })).filter(s => s.id && s.name);
-        setStrategies(list);
-        if (list.length) setSelectedId(list[0].id);
-        log('parsed count', list.length, list.slice(0, 5).map(s => s.id));
-      } else {
-        setStrategies([]);
+      if (abortRef.current) abortRef.current.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+
+      if (!isRefresh) setLoading(true);
+      else setRefreshing(true);
+
+      const res = await fetch(`${API_BASE}/api/strategies`, { signal: ac.signal });
+      if (!res.ok) throw new Error(`List failed: ${res.status}`);
+      const data = (await res.json()) as Strategy[] | { strategies?: Strategy[] };
+      const list = Array.isArray(data) ? data : data?.strategies ?? [];
+      setStrategies(list);
+      // auto-select the first item if nothing picked yet
+      if (!selectedId && list.length > 0) setSelectedId(list[0].id);
+    } catch (err: any) {
+      if (err?.name !== "AbortError") {
+        console.warn(err);
+        Alert.alert("Error", `Failed to load strategies.\n${String(err?.message ?? err)}`);
       }
-    } catch (e: any) {
-      log('load error', String(e?.message || e));
-      setStrategies([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [log]);
+  }, [selectedId]);
 
   useEffect(() => {
-    log('API BASE =>', JSON.stringify(API_BASE));
-    load();
-  }, [load, log]);
+    load(false);
+    return () => abortRef.current?.abort();
+  }, [load]);
 
-  const onContinue = useCallback(() => {
+  const onRefresh = useCallback(() => load(true), [load]);
+
+  const proceed = useCallback(() => {
     if (!selectedId) {
-      Alert.alert('Select a strategy', 'Please choose a strategy to continue.');
+      Alert.alert("Pick a strategy", "Please select a strategy to continue.");
       return;
     }
-    const draft = {
-      name,
-      // pass array so config screen doesn’t have to split again
-      symbols: String(symbols).split(/[,\s]+/).map(s => s.trim()).filter(Boolean),
-      // pass BOTH keys for backward-compat
-      strategyId: selectedId,
-      strategy: selectedId,
-    };
-    log('Continue pressed with draft', JSON.stringify(draft));
-    nav.navigate('NewBotConfig', { draft });
-  }, [name, symbols, selectedId, nav, log]);
+    const picked = strategies?.find(s => s.id === selectedId);
+    navigation.navigate("NewBotConfig", { pickedStrategy: picked ?? { id: selectedId } });
+  }, [navigation, selectedId, strategies]);
 
-  const StrategyCard = ({ s }: { s: Strategy }) => {
-    const selected = s.id === selectedId;
-    return (
-      <TouchableOpacity
-        onPress={() => setSelectedId(s.id)}
-        style={[
-          styles.card,
-          { borderColor: selected ? '#3b82f6' : '#1f2937', backgroundColor: selected ? '#121826' : '#0b1220' },
-        ]}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>
-            {s.name} <Text style={styles.cardVersion}>v{s.version}</Text>
-          </Text>
-          {/* simple green checkmark when selected */}
-          {selected ? <Text style={styles.check}>✓</Text> : null}
-        </View>
-        {!!s.description && <Text style={styles.cardDesc}>{s.description}</Text>}
-        <Text style={styles.cardId}>{s.id}</Text>
-      </TouchableOpacity>
-    );
-  };
+  const keyExtractor = useCallback((item: Strategy) => item.id, []);
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<Strategy>) => {
+      const active = item.id === selectedId;
+      return (
+        <TouchableOpacity
+          onPress={() => setSelectedId(item.id)}
+          style={[styles.card, active && styles.cardActive]}
+        >
+          <View style={styles.row}>
+            <Text style={styles.title} numberOfLines={1}>
+              {item.title || item.name || item.id}
+            </Text>
+            {active ? <Text style={styles.badge}>✓</Text> : null}
+          </View>
+          {/* description should WRAP (no numberOfLines) */}
+          {!!item.description && (
+            <Text style={styles.desc}>{item.description}</Text>
+          )}
+          {/* id shown subtly */}
+          <Text style={styles.subtle}>{item.id}</Text>
+        </TouchableOpacity>
+      );
+    },
+    [selectedId]
+  );
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#0a0f1a' }} contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
-      <Text style={styles.h1}>New Bot</Text>
-
-      <Text style={styles.label}>Name</Text>
-      <View style={styles.inputLike}><Text style={styles.inputText}>{name}</Text></View>
-
-      <Text style={styles.label}>Symbols (comma-separated)</Text>
-      <View style={styles.inputLike}><Text style={styles.inputText}>{symbols}</Text></View>
-
-      <Text style={styles.label}>Strategy</Text>
-
-      {loading ? (
-        <View style={styles.loadingBox}>
+    <View style={{ flex: 1 }}>
+      {loading && !strategies ? (
+        <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={styles.loadingText}>Loading strategies…</Text>
+          <Text style={styles.dim}>Loading strategies…</Text>
         </View>
-      ) : strategies.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyTitle}>No strategies found.</Text>
-          <Text style={styles.emptyText}>Check control-plane and STRATEGIES_DIR, then reload.</Text>
-          <TouchableOpacity onPress={load} style={styles.reloadBtn}><Text style={{ color: 'white', fontWeight: '600' }}>Reload</Text></TouchableOpacity>
-        </View>
+      ) : strategies && strategies.length > 0 ? (
+        <>
+          <FlatList
+            data={strategies}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            contentContainerStyle={{ padding: 16, paddingBottom: 92 }}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+          />
+          <View style={styles.footer}>
+            <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={proceed}>
+              <Text style={styles.btnText}>Continue</Text>
+            </TouchableOpacity>
+          </View>
+        </>
       ) : (
-        <View style={{ borderRadius: 14, borderWidth: 1, borderColor: '#2a2f3a', backgroundColor: '#0b1220', padding: 8 }}>
-          {strategies.map(s => <StrategyCard key={s.id} s={s} />)}
+        <View style={[styles.center, { padding: 24 }]}>
+          <Text style={styles.dim}>No strategies found.</Text>
+          <TouchableOpacity style={[styles.btn, styles.btnGhost, { marginTop: 12 }]} onPress={() => load(true)}>
+            <Text style={styles.btnText}>Reload</Text>
+          </TouchableOpacity>
         </View>
       )}
-
-      <TouchableOpacity
-        onPress={onContinue}
-        disabled={!selectedId || loading}
-        style={[styles.primaryBtn, (!selectedId || loading) && { opacity: 0.6 }]}
-      >
-        <Text style={{ color: 'white', fontWeight: '700' }}>Continue</Text>
-      </TouchableOpacity>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  h1: { color: '#e5e7eb', fontSize: 22, fontWeight: '700', marginBottom: 16 },
-  label: { color: '#9aa4b2', marginBottom: 6, marginTop: 8 },
-  inputLike: { borderRadius: 12, borderWidth: 1, borderColor: '#243447', backgroundColor: '#0d1117', paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8 },
-  inputText: { color: '#cbd5e1' },
-
-  loadingBox: { borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#2a2f3a', backgroundColor: '#0d1117', alignItems: 'center' },
-  loadingText: { color: '#9aa4b2', marginTop: 8 },
-
-  emptyBox: { borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#2a2f3a', backgroundColor: '#0d1117', alignItems: 'center' },
-  emptyTitle: { color: '#cbd5e1', fontWeight: '600', marginBottom: 6 },
-  emptyText: { color: '#94a3b8', textAlign: 'center', marginBottom: 12 },
-  reloadBtn: { backgroundColor: '#1f6feb', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 16 },
-
-  card: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10, marginVertical: 6, borderWidth: 1 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { color: '#e5e7eb', fontWeight: '700' },
-  cardVersion: { color: '#9ca3af', fontWeight: '500' },
-  cardDesc: { color: '#94a3b8', marginTop: 4 },
-  cardId: { color: '#64748b', marginTop: 4, fontSize: 12 },
-  check: { color: '#22c55e', fontWeight: '900', fontSize: 18 },
-  primaryBtn: { marginTop: 16, backgroundColor: '#1f6feb', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
+  dim: { color: "#9aa8b5" },
+  card: {
+    backgroundColor: "#121a22",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  cardActive: {
+    borderColor: "#2563eb",
+  },
+  row: { flexDirection: "row", alignItems: "center" },
+  title: { color: "white", fontWeight: "700", fontSize: 16, flex: 1 },
+  badge: {
+    color: "white",
+    fontWeight: "700",
+    backgroundColor: "#2563eb",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  desc: {
+    color: "#c8d3dd",
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  subtle: { color: "#8795a1", marginTop: 6, fontSize: 12 },
+  footer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(6,10,14,0.9)",
+  },
+  btn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnPrimary: { backgroundColor: "#2563eb" },
+  btnGhost: {
+    backgroundColor: "#10151c",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  btnText: { color: "white", fontWeight: "700" },
 });
