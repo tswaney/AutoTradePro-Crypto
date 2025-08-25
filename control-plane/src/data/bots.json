@@ -1,7 +1,7 @@
 [
   {
-    "id": "bot-i43u",
-    "name": "bot-i43u",
+    "id": "bot-vuqd",
+    "name": "bot-vuqd",
     "status": "stopped",
     "symbols": "BTCUSD,SOLUSD",
     "strategyId": "ultimateSafetyProfitStrategy",
@@ -17,7 +17,7 @@
       "drawDownBrake": 0.15,
       "slippage": 0.001
     },
-    "createdAt": "2025-08-24T18:27:12.154Z",
-    "updatedAt": "2025-08-24T18:27:23.232Z"
+    "createdAt": "2025-08-25T02:05:46.543Z",
+    "updatedAt": "2025-08-25T02:05:46.543Z"
   }
 ]

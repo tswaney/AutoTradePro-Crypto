@@ -20,10 +20,7 @@ if (
 }
 
 // ==============================================
-//
 // Per-bot data directories (isolation)
-// + global holdings override (backend/logs/cryptoHoldings.json)
-//
 // ==============================================
 const fsLogger = require("fs");
 const pathLogger = require("path");
@@ -34,9 +31,6 @@ const BOT_ID = process.env.BOT_ID || "default";
 const DATA_DIR =
   process.env.DATA_DIR || pathLogger.join(__dirname, "data", BOT_ID);
 
-// Ensure helpers see the resolved data dir
-process.env.DATA_DIR = DATA_DIR;
-
 // Ensure DATA_DIR exists
 try {
   fsLogger.mkdirSync(DATA_DIR, { recursive: true });
@@ -45,22 +39,9 @@ try {
   process.exit(1);
 }
 
-// --- Holdings file resolution ---
-// Preferred (shared): backend/logs/cryptoHoldings.json
-const GLOBAL_HOLDINGS_FILE = pathLogger.join(
-  __dirname,
-  "logs",
-  "cryptoHoldings.json"
-);
-// Per-bot file (where we ultimately read from)
-const BOT_HOLDINGS_FILE = pathLogger.join(DATA_DIR, "cryptoHoldings.json");
-
-// If HOLDINGS_FILE is explicitly set via env, it wins for the *shared* path used in earlier logic
-const HOLDINGS_FILE = process.env.HOLDINGS_FILE || GLOBAL_HOLDINGS_FILE;
-// We'll track the actual file we ended up using so demo refresh writes back there.
-let CURRENT_HOLDINGS_PATH = HOLDINGS_FILE;
-
 // File locations (overridable via env)
+const HOLDINGS_FILE =
+  process.env.HOLDINGS_FILE || pathLogger.join(DATA_DIR, "cryptoHoldings.json");
 const LOG_FILE = process.env.LOG_FILE || "testPrice_output.txt";
 const LOG_PATH = process.env.LOG_PATH || pathLogger.join(DATA_DIR, LOG_FILE);
 
@@ -69,9 +50,7 @@ console.log("DEBUG:", {
   __dirname,
   BOT_ID,
   DATA_DIR,
-  GLOBAL_HOLDINGS_FILE,
-  BOT_HOLDINGS_FILE,
-  HOLDINGS_FILE, // preferred/explicit
+  HOLDINGS_FILE,
   LOG_PATH,
 });
 
@@ -108,7 +87,6 @@ const path = require("path");
 const readline = require("readline");
 const { getAccessToken, PUBLIC_API_KEY } = require("./sessionManager");
 const { signRequest } = require("./signRequest");
-const { writeSummary, finalizeSummary } = require("./summary-writer");
 
 // ==============================================
 // Constants, env flags, and strategy config
@@ -141,7 +119,7 @@ const config = {
   demoMode: asBool(process.env.DEMO_MODE),
   testMode: TEST_MODE,
   limitBuysSells: LIMIT_TO_MAX_BUY_SELL,
-  initialBalance: parseFloat(process.env.INITIAL_BALANCE) || 150,
+  initialBalance: parseFloat(process.env.INITIAL_BALANCE) || 1000,
   minTradeAmount: 0.01,
   baseBuyThreshold: -(SIMPLE_BUY_THRESHOLD / 100),
   baseSellThreshold: SIMPLE_SELL_THRESHOLD / 100,
@@ -188,7 +166,6 @@ let portfolio = {
   lastReset: new Date(),
   initialCryptoValue: 0,
   beginningPortfolioValue: 0,
-  _holdingsSource: null, // track file we used
 };
 let strategies = {};
 let selectedStrategy = null;
@@ -277,87 +254,17 @@ async function promptStrategySelection() {
 }
 
 // ==============================================
-// Load holdings (seed per-bot from shared if needed), then read per-bot
+// Load holdings from disk and seed each grid
 // ==============================================
 function loadHoldings() {
-  // 1) If shared file exists and per-bot is missing/empty, copy shared → per-bot
-  try {
-    const sharedPath = GLOBAL_HOLDINGS_FILE;
-    const botPath = BOT_HOLDINGS_FILE;
-
-    const sharedExists = fs.existsSync(sharedPath);
-    const botExists = fs.existsSync(botPath);
-
-    let sharedData = null;
-    if (sharedExists) {
-      try {
-        sharedData = JSON.parse(fs.readFileSync(sharedPath, "utf8"));
-      } catch (e) {
-        console.warn(`⚠️  Shared holdings unreadable: ${e.message}`);
-      }
-    }
-
-    const isSharedUsable =
-      sharedData &&
-      typeof sharedData === "object" &&
-      Object.keys(sharedData).length > 0;
-
-    let isBotEmpty = true;
-    if (botExists) {
-      try {
-        const botDataRaw = JSON.parse(fs.readFileSync(botPath, "utf8"));
-        isBotEmpty = !botDataRaw || Object.keys(botDataRaw).length === 0;
-      } catch (_) {
-        isBotEmpty = true; // unreadable counts as empty
-      }
-    }
-
-    if (isSharedUsable && (!botExists || isBotEmpty)) {
-      fs.copyFileSync(sharedPath, botPath);
-      console.log(`📥 Seeded per-bot holdings from shared file → ${botPath}`);
-    }
-  } catch (e) {
-    console.warn(`⚠️  Seed step skipped: ${e.message}`);
-  }
-
-  // 2) Always load from the per-bot file (after seeding)
-  let data = null;
-  try {
-    if (fs.existsSync(BOT_HOLDINGS_FILE)) {
-      data = JSON.parse(fs.readFileSync(BOT_HOLDINGS_FILE, "utf8"));
-      portfolio._holdingsSource = BOT_HOLDINGS_FILE;
-      CURRENT_HOLDINGS_PATH = BOT_HOLDINGS_FILE;
-      console.log(`✅ Using holdings file: ${BOT_HOLDINGS_FILE}`);
-    }
-  } catch (err) {
-    console.error(`Failed reading per-bot holdings: ${err.message}`);
-  }
-
-  if (!data) {
-    console.warn(
-      `⚠️  No holdings file found with positions. Looked for:\n  - ${BOT_HOLDINGS_FILE}\n  - ${GLOBAL_HOLDINGS_FILE}\nProceeding with an empty portfolio.`
-    );
-    portfolio.cryptos = {};
-    portfolio._holdingsSource = "(none)";
-    CURRENT_HOLDINGS_PATH = BOT_HOLDINGS_FILE;
-    return;
-  }
-
-  // Populate portfolio.cryptos with eligible positions
-  portfolio.cryptos = {};
+  const data = JSON.parse(fs.readFileSync(HOLDINGS_FILE, "utf8"));
   for (const sym in data) {
-    const { amount, costBasis } = data[sym] || {};
-    if (Number(amount) > (config.minTradeAmount || 0.01)) {
+    const { amount, costBasis } = data[sym];
+    if (amount > config.minTradeAmount) {
       portfolio.cryptos[sym] = {
-        amount: Number(amount),
-        costBasis: Number(costBasis),
-        grid: [
-          {
-            price: Number(costBasis),
-            amount: Number(amount),
-            time: Date.now(),
-          },
-        ],
+        amount,
+        costBasis,
+        grid: [{ price: costBasis, amount, time: Date.now() }],
       };
     }
   }
@@ -425,25 +332,13 @@ async function seedStrategyGrids() {
 
 // ==============================================
 // (Demo-only) Refresh costBasis to first live price
-// Writes back to the same file we loaded.
 // ==============================================
 async function refreshDemoCostBasis() {
-  if (!CURRENT_HOLDINGS_PATH) CURRENT_HOLDINGS_PATH = BOT_HOLDINGS_FILE;
   for (const sym of Object.keys(portfolio.cryptos)) {
     const info = await getPrice(sym);
     if (info) portfolio.cryptos[sym].costBasis = info.price;
   }
-  try {
-    fs.writeFileSync(
-      CURRENT_HOLDINGS_PATH,
-      JSON.stringify(portfolio.cryptos, null, 2)
-    );
-    console.log(`💾 Updated holdings costBasis at ${CURRENT_HOLDINGS_PATH}`);
-  } catch (err) {
-    console.warn(
-      `⚠️  Could not write holdings to ${CURRENT_HOLDINGS_PATH}: ${err.message}`
-    );
-  }
+  fs.writeFileSync(HOLDINGS_FILE, JSON.stringify(portfolio.cryptos, null, 2));
 }
 
 // ==============================================
@@ -475,10 +370,6 @@ function printHoldingsTable() {
   };
 
   console.log("\nCurrent Holdings:");
-  if (!rows.length) {
-    console.log("(none)");
-    return;
-  }
   console.log(sep("┌", "┬", "┐"));
   let hdr = "│";
   cols.forEach((c) => {
@@ -519,40 +410,6 @@ async function computePortfolioCryptoValue() {
     total += price * qty;
   }
   return total;
-}
-
-// ==============================================
-// Live Summary Writer: compute current summary from in-memory state
-// ==============================================
-async function computeLiveSummary() {
-  let cryptoVal = 0;
-  for (const sym of Object.keys(portfolio.cryptos ?? {})) {
-    const price = Number(strategies[sym]?.lastPrice);
-    const qty = Number(portfolio.cryptos[sym]?.amount);
-    if (Number.isFinite(price) && Number.isFinite(qty))
-      cryptoVal += price * qty;
-  }
-  const beginning = Number(portfolio.beginningPortfolioValue) || 0;
-  const currentValue =
-    Number(portfolio.cashReserve || 0) +
-    Number(portfolio.lockedCash || 0) +
-    cryptoVal;
-
-  return {
-    beginningPortfolioValue: beginning,
-    duration: portfolio.startTime
-      ? Math.floor((Date.now() - portfolio.startTime.getTime()) / 60000) +
-        " min"
-      : null,
-    buys: portfolio.buysToday || 0,
-    sells: portfolio.sellsToday || 0,
-    totalPL: currentValue - beginning,
-    cash: portfolio.cashReserve ?? null,
-    cryptoMkt: cryptoVal,
-    locked: portfolio.lockedCash ?? null,
-    currentValue,
-    dayPL: portfolio.dailyProfitTotal || 0,
-  };
 }
 
 // ==============================================
@@ -932,11 +789,7 @@ async function runStrategyForSymbol(symbol) {
     }
 
     if (info.price <= lot.price) {
-      if (
-        stopLossActive &&
-        info.price < lot.price &&
-        info.price <= stopLossPrice
-      ) {
+      if (stopLossActive && info.price < lot.price && info.price <= stopLossPrice) {
         console.log(
           `⚠️ STOP-LOSS SELL for ${symbol}: sell price $${info.price.toFixed(
             config.priceDecimalPlaces
@@ -960,9 +813,7 @@ async function runStrategyForSymbol(symbol) {
     const expectedProfit =
       Math.round((proceeds - lot.price * sellableAmount) * 100) / 100;
 
-    if (
-      !(stopLossActive && info.price < lot.price && info.price <= stopLossPrice)
-    ) {
+    if (!(stopLossActive && info.price < lot.price && info.price <= stopLossPrice)) {
       if (expectedProfit <= 0) {
         console.log(
           `❌ SELL BLOCKED for ${symbol}: would yield non-positive profit ($${expectedProfit.toFixed(
@@ -1103,8 +954,6 @@ async function printFinalSummary() {
   console.log(
     `\n=== STARTUP SUMMARY ===\nBeginning Portfolio Value: $${portfolio.beginningPortfolioValue}`
   );
-  if (portfolio._holdingsSource)
-    console.log(`Holdings source: ${portfolio._holdingsSource}`);
 
   // Ctrl handlers
   readline.emitKeypressEvents(process.stdin);
@@ -1131,11 +980,6 @@ async function printFinalSummary() {
   tradingEnabled = true;
   firstCycleDone = true;
   console.log("✅ Initial cycle complete — trading now enabled.");
-
-  // 🔄 Write initial live summary now that trading is enabled
-  try {
-    writeSummary(process.env.DATA_DIR, await computeLiveSummary());
-  } catch {}
 
   async function runCycle() {
     if (shuttingDown) return;
@@ -1164,10 +1008,6 @@ async function printFinalSummary() {
         cycleInFlight = null;
       });
     await cycleInFlight;
-    // 🔁 Write live summary after each completed cycle
-    try {
-      writeSummary(process.env.DATA_DIR, await computeLiveSummary());
-    } catch {}
   }
 
   const interval = setInterval(() => {
@@ -1188,10 +1028,6 @@ async function printFinalSummary() {
     } catch (_) {}
 
     try {
-      // 🧾 Finalize summary before exit
-      try {
-        finalizeSummary(process.env.DATA_DIR, await computeLiveSummary());
-      } catch {}
       await printFinalSummary();
     } catch (e) {
       console.error(e);

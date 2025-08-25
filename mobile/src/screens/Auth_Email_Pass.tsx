@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import SignInScreen from '../screens/SignInScreen';  // modern sign-in UI
-import { apiPost } from '../../api';                  // the shim next to App.tsx
+import { apiPost } from '../api';                  // the shim next to App.tsx
 import { colors, spacing, typography } from '../theme/designSystem';
 import { useSnack } from '../components/Snack';
 

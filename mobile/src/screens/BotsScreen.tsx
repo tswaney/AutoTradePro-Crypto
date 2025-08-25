@@ -52,9 +52,16 @@ export default function BotsScreen() {
   const nav = useNavigation<any>();
   const [bots, setBots] = useState<Bot[]>([]);
   const [summaries, setSummaries] = useState<Record<string, Summary>>({});
+  const [statuses, setStatuses] = useState<Record<string, string>>({}); // live status per bot
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const botsRef = useRef<Bot[]>([]); // avoid stale closure in setInterval
+
+  // keep ref in sync
+  useEffect(() => {
+    botsRef.current = bots;
+  }, [bots]);
 
   const fetchBots = useCallback(async () => {
     setLoading(true);
@@ -74,33 +81,41 @@ export default function BotsScreen() {
   const fetchSummaries = useCallback(async (list: Bot[]) => {
     if (!list.length) {
       setSummaries({});
+      setStatuses({});
       return;
     }
     try {
       const pairs = await Promise.all(
         list.map(async (b) => {
           try {
-            const r = await fetch(`${API_BASE}/api/bots/${b.id}/summary`);
+            const r = await fetch(`${API_BASE}/api/bots/${encodeURIComponent(b.id)}/summary`);
             if (!r.ok) throw new Error(`summary ${b.id} -> ${r.status}`);
             const js: SummaryResp = await r.json();
-            return [b.id, js.summary ?? {}] as const;
+            return [b.id, js.summary ?? {}, js.status ?? b.status ?? "stopped"] as const;
           } catch (e) {
             // keep previous if any
-            return [b.id, summaries[b.id] ?? {}] as const;
+            return [b.id, summaries[b.id] ?? {}, statuses[b.id] ?? (b.status ?? "stopped")] as const;
           }
         })
       );
-      setSummaries(Object.fromEntries(pairs));
+      const nextSummaries: Record<string, Summary> = {};
+      const nextStatuses: Record<string, string> = {};
+      for (const [id, sum, st] of pairs) {
+        nextSummaries[id] = sum;
+        nextStatuses[id] = st;
+      }
+      setSummaries(nextSummaries);
+      setStatuses(nextStatuses);
     } catch (e) {
       console.warn("fetchSummaries:", e);
     }
-  }, [summaries]);
+  }, [summaries, statuses]);
 
   const loadAll = useCallback(async () => {
     await fetchBots();
   }, [fetchBots]);
 
-  // when bots change, load summaries
+  // load summaries whenever bots change
   useEffect(() => {
     fetchSummaries(bots);
   }, [bots, fetchSummaries]);
@@ -110,13 +125,13 @@ export default function BotsScreen() {
     useCallback(() => {
       loadAll();
       pollRef.current = setInterval(() => {
-        // light-weight: refresh summaries only
-        fetchSummaries(bots.length ? bots : []);
+        const list = botsRef.current;
+        if (list && list.length) fetchSummaries(list);
       }, 3000);
       return () => {
         if (pollRef.current) clearInterval(pollRef.current);
       };
-    }, [loadAll, fetchSummaries, bots.length])
+    }, [loadAll, fetchSummaries])
   );
 
   const onRefresh = useCallback(async () => {
@@ -127,8 +142,12 @@ export default function BotsScreen() {
 
   const onOpen = useCallback(
     (b: Bot) => {
+      // NOTE: if your navigator uses "Bot" instead of "BotDetail",
+      // change the route name below to "Bot".
       nav.navigate("BotDetail", {
+        id: b.id,               // also pass as 'id' for compatibility
         botId: b.id,
+        name: b.name ?? b.id,   // and 'name'/'botName'
         botName: b.name ?? b.id,
         strategyId: b.strategyId,
         strategyName: b.strategyName,
@@ -140,12 +159,13 @@ export default function BotsScreen() {
   const renderItem = useCallback(
     ({ item }: { item: Bot }) => {
       const s = summaries[item.id] ?? {};
+      const liveStatus = statuses[item.id] ?? item.status ?? "—";
       return (
         <TouchableOpacity onPress={() => onOpen(item)} style={styles.card} activeOpacity={0.8}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
             <Text style={styles.title}>{item.name ?? item.id}</Text>
-            <Text style={[styles.status, item.status === "running" ? styles.ok : styles.dim]}>
-              {item.status ?? "—"}
+            <Text style={[styles.status, liveStatus === "running" ? styles.ok : styles.dim]}>
+              {liveStatus}
             </Text>
           </View>
 
@@ -164,7 +184,7 @@ export default function BotsScreen() {
         </TouchableOpacity>
       );
     },
-    [onOpen, summaries]
+    [onOpen, summaries, statuses]
   );
 
   const empty = useMemo(
@@ -218,11 +238,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(255,255,255,0.06)",
   },
-  rowLast: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: 8,
-  },
+  rowLast: { flexDirection: "row", justifyContent: "space-between", paddingTop: 8 },
   label: { color: "#9fb0c3" },
   value: { color: "white", fontWeight: "700" },
 

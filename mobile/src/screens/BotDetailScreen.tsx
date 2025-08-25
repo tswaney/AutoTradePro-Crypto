@@ -1,21 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
   ActivityIndicator,
+  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
-  Platform,
+  TouchableOpacity,
 } from "react-native";
-import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
-
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:4000";
+import { apiGet, apiPost } from "../api";
 
 type Summary = {
   beginningPortfolioValue?: number | null;
-  duration?: number | null;
+  duration?: string | number | null;
   buys?: number | null;
   sells?: number | null;
   totalPL?: number | null;
@@ -23,19 +21,10 @@ type Summary = {
   cryptoMkt?: number | null;
   locked?: number | null;
   currentValue?: number | null;
-  dayPL?: number | null; // 24h P/L
+  dayPL?: number | null;
 };
 
-type SummaryResp = {
-  id: string;
-  name: string;
-  status: "running" | "stopped" | "unknown" | string;
-  strategyId?: string;
-  strategyName?: string;
-  summary?: Summary;
-};
-
-function fmtMoney(v?: number | null) {
+function money(v?: number | null) {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
   try {
     return new Intl.NumberFormat(undefined, {
@@ -48,335 +37,199 @@ function fmtMoney(v?: number | null) {
   }
 }
 
-async function robustPost(urls: string[]): Promise<Response> {
-  let lastErr: any;
-  for (const url of urls) {
-    try {
-      const r = await fetch(url, { method: "POST" });
-      if (r.ok) return r;
-      lastErr = new Error(`${url} -> ${r.status}`);
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
-}
+export default function BotDetailScreen({ route, navigation }: any) {
+  const botId: string = route?.params?.id || route?.params?.botId;
+  const botName: string = route?.params?.name || route?.params?.botName || botId;
+  const strategyName: string =
+    route?.params?.strategyName || route?.params?.strategyId || "Unknown";
 
-export default function BotDetailScreen() {
-  const route = useRoute<any>();
-  const navigation = useNavigation<any>();
-
-  // Resolve params
-  const extractId = (p: any): string | undefined =>
-    p?.botId ?? p?.id ?? p?.bot?.id ?? p?.botID ?? p?.bot_id;
-  const extractName = (p: any): string | undefined =>
-    p?.botName ?? p?.name ?? p?.bot?.name;
-  const extractStrategy = (p: any): { id?: string; name?: string } => ({
-    id: p?.strategyId ?? p?.strategy?.id,
-    name: p?.strategyName ?? p?.strategy?.name,
-  });
-
-  const [botId, setBotId] = useState<string | undefined>(() => extractId(route.params));
-  const [botName, setBotName] = useState<string | undefined>(() => extractName(route.params));
-  const initialStrat = extractStrategy(route.params ?? {});
-  const [strategyId, setStrategyId] = useState<string | undefined>(initialStrat.id);
-  const [strategyLabel, setStrategyLabel] = useState<string | undefined>(initialStrat.name ?? initialStrat.id);
-
-  const [status, setStatus] = useState<"running" | "stopped" | "unknown">("unknown");
+  const [status, setStatus] = useState<"running" | "stopped" | string>("stopped");
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [logs, setLogs] = useState<string>("No log output yet…");
-  const [busy, setBusy] = useState(false);
-
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    const id = extractId(route.params);
-    const nm = extractName(route.params);
-    const st = extractStrategy(route.params ?? {});
-    if (id && id !== botId) setBotId(id);
-    if (nm && nm !== botName) setBotName(nm);
-    if (st.id && st.id !== strategyId) setStrategyId(st.id);
-    const label = st.name ?? st.id;
-    if (label && label !== strategyLabel) setStrategyLabel(label);
-  }, [route.params, botId, botName, strategyId, strategyLabel]);
-
-  const loadOnce = useCallback(async () => {
+  const fetchSummary = useCallback(async () => {
     if (!botId) return;
     try {
-      abortRef.current?.abort();
-      const ac = new AbortController();
-      abortRef.current = ac;
-      const res = await fetch(`${API_BASE}/api/bots/${botId}/summary`, { signal: ac.signal });
-      if (res.ok) {
-        const data: SummaryResp = await res.json();
-        setStatus((data.status as any) ?? "unknown");
-        setSummary(data.summary ?? null);
-        if (!botName && data?.name) setBotName(data.name);
-        if (!strategyId && data?.strategyId) setStrategyId(data.strategyId);
-        const label = data?.strategyName ?? data?.strategyId;
-        if (label && label !== strategyLabel) setStrategyLabel(label);
-      }
-      const r2 = await fetch(`${API_BASE}/api/bots/${botId}/logs?limit=200`, { signal: ac.signal });
-      if (r2.ok) {
-        const data = await r2.json();
-        const text = (data?.lines ?? []).join("\n").trim();
-        setLogs(text.length ? text : "No log output yet…");
-      }
+      const s = await apiGet<{ id: string; status: string; summary: Summary }>(
+        `/api/bots/${encodeURIComponent(botId)}/summary`
+      );
+      setStatus((s as any).status || "stopped");
+      setSummary(s.summary || null);
     } catch (err: any) {
-      if (err?.name === "AbortError") return;
-      console.warn("loadOnce:", err);
+      console.warn("summary err:", err?.message || err);
+    } finally {
+      setLoading(false);
     }
-  }, [botId, botName, strategyId, strategyLabel]);
+  }, [botId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadOnce();
-      pollRef.current = setInterval(loadOnce, 2500);
-      return () => {
-        if (pollRef.current) clearInterval(pollRef.current);
-        abortRef.current?.abort();
-      };
-    }, [loadOnce])
-  );
-
-  const onStart = useCallback(async () => {
-    if (!botId) {
-      Alert.alert("Missing bot id", "Cannot start because bot id was not provided.");
-      return;
-    }
-    setBusy(true);
+  const start = useCallback(async () => {
+    if (!botId) return;
+    setWorking(true);
     try {
-      const urls = [
-        `${API_BASE}/api/bots/${botId}/start`,
-        `${API_BASE}/api/bot/${botId}/actions/start`,
-      ];
-      const r = await robustPost(urls);
-      if (!r.ok) throw new Error(`Start failed: ${r.status}`);
+      await apiPost(`/api/bots/${encodeURIComponent(botId)}/start`);
       setStatus("running");
-      Alert.alert("Bot started", `${botName ?? botId} is starting…`);
-      setTimeout(loadOnce, 300);
+      setTimeout(fetchSummary, 300);
     } catch (err: any) {
-      console.warn("start err:", err);
-      Alert.alert("Error", String(err?.message ?? err));
+      Alert.alert("Error", `start err: ${String(err?.message || err)}`);
     } finally {
-      setBusy(false);
+      setWorking(false);
     }
-  }, [botId, botName, loadOnce]);
+  }, [botId, fetchSummary]);
 
-  const onStop = useCallback(async () => {
-    if (!botId) {
-      Alert.alert("Missing bot id", "Cannot stop because bot id was not provided.");
-      return;
-    }
-    setBusy(true);
+  const stop = useCallback(async () => {
+    if (!botId) return;
+    setWorking(true);
     try {
-      const urls = [
-        `${API_BASE}/api/bots/${botId}/stop`,
-        `${API_BASE}/api/bot/${botId}/actions/stop`,
-      ];
-      const r = await robustPost(urls);
-      if (!r.ok) throw new Error(`Stop failed: ${r.status}`);
+      await apiPost(`/api/bots/${encodeURIComponent(botId)}/stop`);
       setStatus("stopped");
-      Alert.alert("Bot stopped", `${botName ?? botId} has stopped.`);
-      setTimeout(loadOnce, 300);
+      setTimeout(fetchSummary, 300);
     } catch (err: any) {
-      console.warn("stop err:", err);
-      Alert.alert("Error", String(err?.message ?? err));
+      Alert.alert("Error", `stop err: ${String(err?.message || err)}`);
     } finally {
-      setBusy(false);
+      setWorking(false);
     }
-  }, [botId, botName, loadOnce]);
+  }, [botId, fetchSummary]);
 
-  const onDelete = useCallback(async () => {
-    if (!botId) {
-      Alert.alert("Missing bot id", "Cannot delete because bot id was not provided.");
-      return;
-    }
-    Alert.alert("Delete bot", `Delete ${botName ?? botId}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          setBusy(true);
-          try {
-            const r = await fetch(`${API_BASE}/api/bots/${botId}`, { method: "DELETE" });
-            if (!r.ok) {
-              const r2 = await fetch(`${API_BASE}/api/bots/${botId}/delete`, { method: "POST" });
-              if (!r2.ok) throw new Error(`Delete failed: ${r.status}/${r2.status}`);
+  const confirmDelete = useCallback(() => {
+    if (!botId) return;
+    Alert.alert(
+      "Delete Bot",
+      `Are you sure you want to delete “${botName}”? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setWorking(true);
+            try {
+              try {
+                await apiPost(`/api/bots/${encodeURIComponent(botId)}/delete`);
+              } catch {
+                await fetch(`/api/bots/${encodeURIComponent(botId)}`, { method: "DELETE" });
+              }
+              navigation.goBack();
+            } catch (err: any) {
+              Alert.alert("Error", `delete err: ${String(err?.message || err)}`);
+            } finally {
+              setWorking(false);
             }
-            setTimeout(() => {
-              navigation.popToTop?.();
-              (navigation as any).getParent?.()?.popToTop?.();
-            }, 50);
-          } catch (err: any) {
-            console.warn("delete err:", err);
-            Alert.alert("Error", String(err?.message ?? err));
-          } finally {
-            setBusy(false);
-          }
+          },
         },
-      },
-    ]);
+      ],
+      { cancelable: true }
+    );
   }, [botId, botName, navigation]);
 
+  useEffect(() => {
+    fetchSummary();
+    pollRef.current && clearInterval(pollRef.current);
+    pollRef.current = setInterval(fetchSummary, 4000);
+    return () => {
+      pollRef.current && clearInterval(pollRef.current);
+    };
+  }, [fetchSummary]);
+
+  const disabledStart = working || status === "running";
+  const disabledStop = working || status !== "running";
+
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
-        {/* Strategy on top, bot name below */}
-        <Text style={styles.h1}>{strategyLabel ?? "Strategy"}</Text>
-        <Text style={styles.sub}>{botName ?? botId ?? "—"}</Text>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 140 }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 }}>
+        <Text style={styles.strategyTitle}>{strategyName}</Text>
+        <Text style={styles.botSubtitle}>{botName}</Text>
+      </View>
 
-        {!botId && (
-          <View style={styles.warnBox}>
-            <Text style={styles.warnTitle}>No bot id provided</Text>
-            <Text style={styles.warnText}>
-              Open this screen from the Bots list, or navigate with{" "}
-              <Text style={styles.code}>navigate('BotDetail', {'{ botId }'})</Text>.
-            </Text>
-          </View>
-        )}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Total Portfolio Summary</Text>
+        <Row k="Beginning Portfolio Value" v={money(summary?.beginningPortfolioValue ?? null)} />
+        <Row k="Duration" v={`${summary?.duration ?? "—"}`} />
+        <Row k="Buys" v={`${summary?.buys ?? 0}`} />
+        <Row k="Sells" v={`${summary?.sells ?? 0}`} />
+        <Row k="24h P/L" v={money(summary?.dayPL ?? 0)} />
+        <Row k="Total P/L" v={money(summary?.totalPL ?? 0)} />
+        <Row k="Cash" v={money(summary?.cash ?? null)} />
+        <Row k="Crypto (mkt)" v={money(summary?.cryptoMkt ?? null)} />
+        <Row k="Locked" v={summary?.locked == null ? "—" : money(summary?.locked)} />
+        <Row k="Current Portfolio Value" v={money(summary?.currentValue ?? 0)} />
+      </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Total Portfolio Summary</Text>
-          <Row label="Beginning Portfolio Value" value={fmtMoney(summary?.beginningPortfolioValue)} />
-          <Row label="Duration" value={summary?.duration ?? "—"} />
-          <Row label="Buys" value={summary?.buys ?? "—"} />
-          <Row label="Sells" value={summary?.sells ?? "—"} />
-          <Row label="24h P/L" value={fmtMoney(summary?.dayPL)} />
-          <Row label="Total P/L" value={fmtMoney(summary?.totalPL)} />
-          <Row label="Cash" value={fmtMoney(summary?.cash)} />
-          <Row label="Crypto (mkt)" value={fmtMoney(summary?.cryptoMkt)} />
-          <Row label="Locked" value={fmtMoney(summary?.locked)} />
-          <Row label="Current Portfolio Value" value={fmtMoney(summary?.currentValue)} />
-        </View>
-
-        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Logs</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Logs</Text>
         <View style={styles.logBox}>
-          {logs === null ? (
-            <View style={styles.center}>
-              <ActivityIndicator />
-              <Text style={styles.dim}>Loading logs…</Text>
-            </View>
-          ) : (
-            <Text style={styles.logText}>{logs}</Text>
-          )}
+          {loading ? <ActivityIndicator /> : <Text style={styles.logText}>No log output yet…</Text>}
         </View>
-      </ScrollView>
+      </View>
 
       <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnPrimary, (!botId || busy) && styles.btnDisabled]}
-          onPress={onStart}
-          disabled={!botId || busy}
-        >
-          <Text style={styles.btnText}>Start</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnGhost, (!botId || busy) && styles.btnDisabled]}
-          onPress={onStop}
-          disabled={!botId || busy}
-        >
-          <Text style={styles.btnText}>Stop</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnDanger, (!botId || busy) && styles.btnDisabled]}
-          onPress={onDelete}
-          disabled={!botId || busy}
-        >
-          <Text style={styles.btnText}>Delete</Text>
-        </TouchableOpacity>
+        <Button label="Start" onPress={start} disabled={disabledStart} kind="primary" />
+        <Button label="Stop" onPress={stop} disabled={disabledStop} />
+        <Button label="Delete" onPress={confirmDelete} kind="danger" disabled={working} />
       </View>
+    </ScrollView>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <View style={styles.kvRow}>
+      <Text style={styles.k}>{k}</Text>
+      <Text style={styles.v}>{v}</Text>
     </View>
   );
 }
 
-function Row({ label, value }: { label: string; value: any }) {
+function Button({
+  label,
+  onPress,
+  disabled,
+  kind = "secondary",
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  kind?: "primary" | "secondary" | "danger";
+}) {
+  const bg =
+    kind === "primary" ? "#2563eb" : kind === "danger" ? "#ef4444" : "#334155";
+  const bgDisabled =
+    kind === "primary" ? "rgba(37,99,235,0.45)" : kind === "danger" ? "rgba(239,68,68,0.45)" : "rgba(51,65,85,0.45)";
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{String(value)}</Text>
-    </View>
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={!!disabled}
+      style={[styles.btn, { backgroundColor: disabled ? bgDisabled : bg }]}
+    >
+      <Text style={styles.btnLabel}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  h1: { color: "white", fontWeight: "800", fontSize: 22 },
-  sub: { color: "#8ea0b2", marginTop: 4, marginBottom: 12, fontSize: 12 },
-
-  warnBox: {
-    backgroundColor: "#2b1f15",
-    borderColor: "#b45309",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
-  },
-  warnTitle: { color: "#f59e0b", fontWeight: "700", marginBottom: 4 },
-  warnText: { color: "#fffbeb" },
-  code: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", color: "#fcd34d" },
-
+  container: { flex: 1 },
+  strategyTitle: { color: "white", fontSize: 22, fontWeight: "800", letterSpacing: 0.2 },
+  botSubtitle: { color: "#9aa0a6", fontSize: 12, marginTop: 2 },
   card: {
-    backgroundColor: "#0f1620",
-    borderRadius: 14,
+    marginHorizontal: 16,
+    marginTop: 14,
     padding: 14,
-    marginBottom: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "#121821",
+    borderRadius: 14,
+    borderColor: "#1f2937",
+    borderWidth: 1,
   },
-  cardTitle: { color: "white", fontWeight: "700", fontSize: 16, marginBottom: 10 },
-
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.06)",
-  },
-  rowLabel: { flex: 1, color: "#9fb0c3" },
-  rowValue: { color: "white", fontWeight: "700" },
-
-  sectionTitle: { color: "white", fontWeight: "700", fontSize: 16 },
-  logBox: {
-    backgroundColor: "#0b1118",
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.06)",
-    minHeight: 160,
-  },
-  logText: {
-    color: "#cfe1f5",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 12,
-    lineHeight: 18,
-  },
-
+  cardTitle: { color: "white", fontSize: 16, fontWeight: "700", marginBottom: 8 },
+  kvRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
+  k: { color: "#9aa0a6" },
+  v: { color: "white", fontWeight: "700" },
+  logBox: { borderWidth: 1, borderColor: "#1f2937", borderRadius: 10, padding: 10, minHeight: 120, backgroundColor: "#0b1118" },
+  logText: { color: "#cfe1f5", fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "Courier" }) },
   footer: {
-    position: "absolute",
-    left: 0, right: 0, bottom: 0,
-    padding: 12,
-    flexDirection: "row",
-    gap: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(6,10,14,0.95)",
+    position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, gap: 10, flexDirection: "row",
+    backgroundColor: "rgba(9,13,19,0.92)", borderTopWidth: 1, borderTopColor: "#1f2937",
   },
-  btn: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  btnPrimary: { backgroundColor: "#2563eb" },
-  btnGhost: { backgroundColor: "#233044" },
-  btnDanger: { backgroundColor: "#ef4444" },
-  btnDisabled: { opacity: 0.4 },
-  btnText: { color: "white", fontWeight: "700" },
-
-  center: { alignItems: "center", justifyContent: "center", gap: 6 },
-  dim: { color: "#8ea0b2" },
+  btn: { flex: 1, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 12 },
+  btnLabel: { color: "white", fontWeight: "700" },
 });

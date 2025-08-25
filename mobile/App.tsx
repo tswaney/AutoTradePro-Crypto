@@ -10,7 +10,7 @@ import SignInScreen from "./src/screens/SignInScreen";
 import BotDetailScreen from "./src/screens/BotDetailScreen";
 import NewBotScreen from "./src/screens/NewBotScreen";
 import NewBotConfigScreen from "./src/screens/NewBotConfigScreen";
-import { apiLogout } from "./api";
+import { apiLogout } from "./src/api";
 
 const API_BASE =
   (process as any)?.env?.EXPO_PUBLIC_API_BASE ||
