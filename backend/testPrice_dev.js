@@ -108,7 +108,11 @@ const path = require("path");
 const readline = require("readline");
 const { getAccessToken, PUBLIC_API_KEY } = require("./sessionManager");
 const { signRequest } = require("./signRequest");
-const { writeSummary, finalizeSummary } = require("./summary-writer");
+const {
+  writeSummary,
+  finalizeSummary,
+  updateWithPl24h,
+} = require("./summary-writer");
 
 // ==============================================
 // Constants, env flags, and strategy config
@@ -1134,7 +1138,11 @@ async function printFinalSummary() {
 
   // 🔄 Write initial live summary now that trading is enabled
   try {
-    writeSummary(process.env.DATA_DIR, await computeLiveSummary());
+    const s = await computeLiveSummary();
+    writeSummary(
+      process.env.DATA_DIR,
+      updateWithPl24h(process.env.DATA_DIR, s)
+    );
   } catch {}
 
   async function runCycle() {
@@ -1166,7 +1174,11 @@ async function printFinalSummary() {
     await cycleInFlight;
     // 🔁 Write live summary after each completed cycle
     try {
-      writeSummary(process.env.DATA_DIR, await computeLiveSummary());
+      const s = await computeLiveSummary();
+      writeSummary(
+        process.env.DATA_DIR,
+        updateWithPl24h(process.env.DATA_DIR, s)
+      );
     } catch {}
   }
 
@@ -1190,7 +1202,11 @@ async function printFinalSummary() {
     try {
       // 🧾 Finalize summary before exit
       try {
-        finalizeSummary(process.env.DATA_DIR, await computeLiveSummary());
+        const s = await computeLiveSummary();
+        finalizeSummary(
+          process.env.DATA_DIR,
+          updateWithPl24h(process.env.DATA_DIR, s)
+        );
       } catch {}
       await printFinalSummary();
     } catch (e) {

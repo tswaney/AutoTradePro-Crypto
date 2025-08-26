@@ -4,6 +4,7 @@ import cors from "cors";
 
 import strategiesRouter from "./routes/strategies.js";
 import botsRouter from "./routes/bots.js";
+import mountLogs from "./routes/logs.js"; // <-- added
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -20,6 +21,9 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.use("/api", strategiesRouter);
 app.use("/api", botsRouter);
 
+// Mount the plain /api/bots/:id/log handler
+mountLogs(app); // <-- added
+
 // Minimal root
 app.get("/", (_req, res) => {
   res.type("text/plain").send("control-plane API is running");
@@ -33,12 +37,10 @@ app.use((req, res) => {
 // Error handler (JSON)
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);
-  res
-    .status(500)
-    .json({
-      error: "Internal Server Error",
-      detail: String(err?.message || err),
-    });
+  res.status(500).json({
+    error: "Internal Server Error",
+    detail: String(err?.message || err),
+  });
 });
 
 app.listen(PORT, () => {
