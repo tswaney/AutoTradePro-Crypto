@@ -1,9 +1,11 @@
 // mobile/src/api.ts
-// Helper for the control-plane API used by the mobile app.
-// Set EXPO_PUBLIC_API_BASE in mobile/.env for your dev server (e.g., http://localhost:4000)
+// Control-plane API helpers for the mobile app.
+// Set EXPO_PUBLIC_API_BASE in mobile/.env (e.g., http://localhost:4000)
 
 export const API_BASE =
   process.env.EXPO_PUBLIC_API_BASE?.replace(/\/+$/, "") || "http://localhost:4000";
+
+/* ------------------------------ core fetchers ------------------------------ */
 
 type FetchOpts = {
   method?: "GET" | "POST" | "DELETE" | "PUT" | "PATCH";
@@ -24,14 +26,12 @@ async function request<T = any>(path: string, opts: FetchOpts = {}): Promise<T> 
   });
 
   const text = await res.text();
-  const data = (() => {
-    try {
-      return text ? JSON.parse(text) : ({} as any);
-    } catch {
-      // return raw text if not JSON
-      return { raw: text };
-    }
-  })();
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
 
   if (!res.ok) {
     const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
@@ -40,12 +40,12 @@ async function request<T = any>(path: string, opts: FetchOpts = {}): Promise<T> 
   return data as T;
 }
 
-export function apiGet<T = any>(path: string): Promise<T> {
-  return request<T>(path, { method: "GET" });
-}
-export function apiPost<T = any>(path: string, body?: any): Promise<T> {
-  return request<T>(path, { method: "POST", body });
-}
+export const apiGet = <T = any>(path: string) =>
+  request<T>(path, { method: "GET" });
+
+export const apiPost = <T = any>(path: string, body?: any) =>
+  request<T>(path, { method: "POST", body });
+
 export async function apiGetText(path: string): Promise<string> {
   const url = `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
   const res = await fetch(url);
@@ -53,63 +53,116 @@ export async function apiGetText(path: string): Promise<string> {
   return res.text();
 }
 
-// ---- Types & helpers for the bot screens ----
+/* ---------------------------------- types --------------------------------- */
+
 export type BotSummary = {
   beginningPortfolioValue: number | null;
   duration: string | null;
   buys: number;
   sells: number;
-  totalPL: number;      // live Total P/L
+  totalPL: number;       // live Total P/L
   cash: number | null;
   cryptoMkt: number | null;
   locked: number | null;
-  currentValue: number; // live current portfolio value
-  dayPL: number;        // today's realized P/L
-  pl24h?: number;       // NEW: trailing 24h total P/L
-  pl24hAvg?: number;    // NEW: trailing 24h avg per hour
+  currentValue: number;  // live current portfolio value
+  dayPL: number;         // today's realized P/L
+  pl24h?: number;        // trailing 24h total P/L (if available)
+  pl24hAvg?: number;     // trailing 24h avg per hour (if available)
+  strategy?: string | null; // active strategy
 };
 
-// Coercion helpers (server may send strings)
-const n = (v: any): number => (v == null ? 0 : Number(v));
+export type BotListItem = { id: string; name?: string; status?: string };
+export type BotOverview = { id: string; name?: string; status?: string; summary: BotSummary };
+
+/* ------------------------------ coercion utils ----------------------------- */
+
+const n = (v: any): number => (v == null || v === "" ? 0 : Number(v));
 const nOrNull = (v: any): number | null =>
   v == null || v === "" ? null : Number(v);
 
-export const getBotSummary = async (botId: string): Promise<BotSummary> => {
-  const raw = await apiGet<any>(`/api/bots/${encodeURIComponent(botId)}/summary`);
-  const s = raw?.summary ?? raw; // tolerate both wrapped and unwrapped shapes
+/* ------------------------------- API helpers ------------------------------ */
 
-  // If the server returned nothing, provide a safe empty summary so UI doesn't break
-  if (!s || typeof s !== "object") {
-    return {
-      beginningPortfolioValue: null,
-      duration: null,
-      buys: 0,
-      sells: 0,
-      totalPL: 0,
-      cash: null,
-      cryptoMkt: null,
-      locked: null,
-      currentValue: 0,
-      dayPL: 0,
-      pl24h: 0,
-      pl24hAvg: 0,
-    };
-  }
+export const listBots = async (): Promise<BotListItem[]> => {
+  const arr = await apiGet<any[]>(`/api/bots`);
+  return Array.isArray(arr)
+    ? arr.map((b) => ({
+        id: String(b.id ?? b.name ?? "unknown"),
+        name: typeof b.name === "string" ? b.name : String(b.id ?? ""),
+        status: typeof b.status === "string" ? b.status : undefined,
+      }))
+    : [];
+};
+
+/** Wraps /api/bots/:id/summary and returns { id, name, status, summary } */
+export const getBotOverview = async (botId: string): Promise<BotOverview> => {
+  const raw = await apiGet<any>(`/api/bots/${encodeURIComponent(botId)}/summary`);
+  const s = raw?.summary ?? raw;
+
+  const summary: BotSummary =
+    s && typeof s === "object"
+      ? {
+          beginningPortfolioValue: nOrNull(s.beginningPortfolioValue),
+          duration: s.duration ?? null,
+          buys: n(s.buys),
+          sells: n(s.sells),
+          totalPL: n(s.totalPL),
+          cash: nOrNull(s.cash),
+          cryptoMkt: nOrNull(s.cryptoMkt),
+          locked: nOrNull(s.locked),
+          currentValue: n(s.currentValue),
+          dayPL: n(s.dayPL),
+          pl24h: s.pl24h == null ? undefined : n(s.pl24h),
+          pl24hAvg: s.pl24hAvg == null ? undefined : n(s.pl24hAvg),
+          strategy:
+            typeof s.strategy === "string" && s.strategy.trim()
+              ? s.strategy
+              : null,
+        }
+      : {
+          beginningPortfolioValue: null,
+          duration: null,
+          buys: 0,
+          sells: 0,
+          totalPL: 0,
+          cash: null,
+          cryptoMkt: null,
+          locked: null,
+          currentValue: 0,
+          dayPL: 0,
+          pl24h: 0,
+          pl24hAvg: 0,
+          strategy: null,
+        };
 
   return {
-    beginningPortfolioValue: nOrNull(s.beginningPortfolioValue),
-    duration: s.duration ?? null,
-    buys: n(s.buys || 0),
-    sells: n(s.sells || 0),
-    totalPL: n(s.totalPL),
-    cash: nOrNull(s.cash),
-    cryptoMkt: nOrNull(s.cryptoMkt),
-    locked: nOrNull(s.locked),
-    currentValue: n(s.currentValue),
-    dayPL: n(s.dayPL),
-    pl24h: s.pl24h == null ? undefined : n(s.pl24h),
-    pl24hAvg: s.pl24hAvg == null ? undefined : n(s.pl24hAvg),
+    id: String(raw?.id ?? botId),
+    name: typeof raw?.name === "string" ? raw.name : undefined,
+    status: typeof raw?.status === "string" ? raw.status : undefined,
+    summary,
   };
+};
+
+/** Kept for convenience in screens that only want the summary object */
+export const getBotSummary = async (botId: string): Promise<BotSummary> => {
+  const { summary } = await getBotOverview(botId);
+  return summary;
+};
+
+/** Logs: try JSON endpoint (/logs?limit=), fall back to legacy text (/log?tail=) */
+export const getBotLog = async (botId: string, limit = 200): Promise<string> => {
+  try {
+    const j = await apiGet<{ lines?: string[] }>(
+      `/api/bots/${encodeURIComponent(botId)}/logs?limit=${limit}`
+    );
+    if (Array.isArray(j?.lines)) return j.lines.join("\n");
+  } catch {
+    // fall through to legacy
+  }
+  try {
+    return await apiGetText(`/api/bots/${encodeURIComponent(botId)}/log?tail=${limit}`);
+  } catch {
+    return "";
+  }
 };
 
 export const startBot = (botId: string) =>
@@ -118,9 +171,5 @@ export const startBot = (botId: string) =>
 export const stopBot = (botId: string) =>
   apiPost(`/api/bots/${encodeURIComponent(botId)}/stop`);
 
-export const getBotLog = (botId: string, tail = 200) =>
-  apiGetText(`/api/bots/${encodeURIComponent(botId)}/log?tail=${tail}`);
-
-// Optional: list bots if your control-plane exposes it
-export type BotListItem = { id: string; name?: string; status?: string };
-export const listBots = () => apiGet<BotListItem[]>(`/api/bots`);
+export const deleteBot = (botId: string) =>
+  apiPost(`/api/bots/${encodeURIComponent(botId)}/delete`);

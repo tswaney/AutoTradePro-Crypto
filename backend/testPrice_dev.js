@@ -239,6 +239,36 @@ async function promptStrategySelection() {
     console.log(` [${i + 1}] ${s.name} (${s.version}) - ${s.description}`)
   );
 
+  // ---- NEW: honor STRATEGY_NAME (string id or human name) before numeric choice
+  const wantedName = (process.env.STRATEGY_NAME || "").trim();
+  if (wantedName) {
+    const norm = (s) =>
+      String(s)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+    const want = norm(wantedName);
+    let found =
+      modules.find((m) => norm(m.name) === want) ||
+      modules.find(
+        (m) => norm(m.name).includes(want) || want.includes(norm(m.name))
+      ) ||
+      null;
+
+    if (found) {
+      config.strategy = `${found.name} (${found.version})`;
+      selectedStrategy = found;
+      console.log(
+        `\nAuto-selected strategy: ${config.strategy} (from STRATEGY_NAME)`
+      );
+      return;
+    } else {
+      console.log(
+        `[warn] STRATEGY_NAME='${wantedName}' did not match any known strategy; falling back.`
+      );
+    }
+  }
+  // ---- END NEW
+
   // Auto-select when STRATEGY_CHOICE is set (1..N) OR stdin isn't a TTY
   const DEFAULT_STRATEGY_INDEX = 8; // 0-based index for #9
   const envChoice = parseInt(process.env.STRATEGY_CHOICE || "", 10);
@@ -556,6 +586,8 @@ async function computeLiveSummary() {
     locked: portfolio.lockedCash ?? null,
     currentValue,
     dayPL: portfolio.dailyProfitTotal || 0,
+    // >>> include the chosen strategy so the UI can show it reliably
+    strategy: config.strategy || null,
   };
 }
 
@@ -1186,7 +1218,9 @@ async function printFinalSummary() {
     tickOnce();
   }, config.checkInterval);
 
-  process.once("SIGINT", async () => {
+  // ---- Graceful shutdown for multiple signals (SIGINT/SIGTERM/SIGHUP) ----
+  const shutdown = async () => {
+    if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(interval);
 
@@ -1200,7 +1234,7 @@ async function printFinalSummary() {
     } catch (_) {}
 
     try {
-      // 🧾 Finalize summary before exit
+      // 🧾 Finalize summary before exit (with 24h P/L update)
       try {
         const s = await computeLiveSummary();
         finalizeSummary(
@@ -1218,7 +1252,9 @@ async function printFinalSummary() {
     } catch (_) {}
 
     process.exit(0);
-  });
+  };
+
+  ["SIGINT", "SIGTERM", "SIGHUP"].forEach((sig) => process.once(sig, shutdown));
 })();
 
 function printLegend() {

@@ -119,7 +119,9 @@ export default function NewBotConfigScreen() {
         name: name.trim(),
         symbols: symbols.replace(/\s+/g, ""),
         strategyId,
-        config: values,
+        // IMPORTANT: mirror the chosen strategy into STRATEGY_NAME
+        // so the backend runner picks the correct module.
+        config: { ...values, STRATEGY_NAME: strategyId },
       };
       const res = await fetch(`${API_BASE}/api/bots`, {
         method: "POST",
@@ -128,11 +130,9 @@ export default function NewBotConfigScreen() {
       });
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Create failed: ${res.status}\n${text}`);
+        throw new Error(text || `HTTP ${res.status}`);
       }
-      const data = await res.json();
-
-      Alert.alert("Created", `Bot ${data?.name ?? body.name} created.`, [
+      Alert.alert("Bot created", "Your bot was created and is currently stopped. You can start it from the detail screen.", [
         {
           text: "OK",
           onPress: () => {
@@ -189,33 +189,64 @@ export default function NewBotConfigScreen() {
             autoCorrect={false}
           />
 
-          {/* Dynamic config fields */}
+          {/* Dynamic fields from strategy schema */}
           {(schema?.fields ?? []).map((f) => {
-            if (f.type === "enum") {
+            if (f.type === "string") {
               return (
-                <View key={f.key} style={{ marginTop: 14 }}>
+                <View key={f.key}>
                   <Text style={styles.label}>{f.label}</Text>
                   <TextInput
                     style={styles.input}
                     value={String(values[f.key] ?? "")}
                     onChangeText={(t) => onChangeValue(f.key, t)}
-                    placeholder={(f as any).options?.join(" | ")}
-                    placeholderTextColor="#6b7280"
+                    autoCapitalize="none"
+                    autoCorrect={false}
                   />
                 </View>
               );
             }
-            return (
-              <View key={f.key} style={{ marginTop: 14 }}>
-                <Text style={styles.label}>{f.label}</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType={f.type === "number" ? "decimal-pad" : "default"}
-                  value={String(values[f.key] ?? "")}
-                  onChangeText={(t) => onChangeValue(f.key, t)}
-                />
-              </View>
-            );
+            if (f.type === "number") {
+              const raw = values[f.key];
+              const numText = raw == null ? "" : String(raw);
+              return (
+                <View key={f.key}>
+                  <Text style={styles.label}>{f.label}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={numText}
+                    onChangeText={(t) => {
+                      const cleaned = t.replace(/[^0-9.\-]/g, "");
+                      onChangeValue(f.key, cleaned);
+                    }}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              );
+            }
+            if (f.type === "enum") {
+              const options = (f as any).options || [];
+              const v = values[f.key] ?? options[0] ?? "";
+              return (
+                <View key={f.key}>
+                  <Text style={styles.label}>{f.label}</Text>
+                  <View style={styles.enumRow}>
+                    {options.map((opt: string) => {
+                      const selected = v === opt;
+                      return (
+                        <TouchableOpacity
+                          key={opt}
+                          style={[styles.enumPill, selected ? styles.enumPillOn : styles.enumPillOff]}
+                          onPress={() => onChangeValue(f.key, opt)}
+                        >
+                          <Text style={selected ? styles.enumTextOn : styles.enumTextOff}>{opt}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            }
+            return null;
           })}
 
           <View style={{ height: 24 }} />
@@ -247,21 +278,39 @@ const styles = StyleSheet.create({
   h1: { color: "white", fontWeight: "700", fontSize: 22, marginBottom: 12 },
   label: { color: "#9aa8b5", fontSize: 13, marginBottom: 6, marginTop: 10 },
   input: {
-    backgroundColor: "#131b24",
-    color: "white",
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    backgroundColor: "#0b1016",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.08)",
+    color: "white",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  disabled: { opacity: 0.7 },
+  disabled: {
+    color: "#8b93a1",
+    backgroundColor: "rgba(6,10,14,0.9)",
+  },
+  enumRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  enumPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  enumPillOn: { backgroundColor: "#1f3a8a" },
+  enumPillOff: { backgroundColor: "#0b1016", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.1)" },
+  enumTextOn: { color: "white", fontWeight: "700" },
+  enumTextOff: { color: "#b9c3cf", fontWeight: "600" },
+
   footer: {
     flexDirection: "row",
     gap: 12,
-    padding: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.08)",
+    padding: 12,
     backgroundColor: "rgba(6,10,14,0.9)",
   },
   btn: {

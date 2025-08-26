@@ -21,9 +21,11 @@ function writeSummary(dir, s) {
       locked: s.locked == null ? null : safe(s.locked),
       currentValue: safe(s.currentValue),
       dayPL: safe(s.dayPL),
-      // NEW: trailing 24h metrics
+      // NEW: trailing 24h metrics:
       pl24h: safe(s.pl24h || 0),
       pl24hAvg: safe(s.pl24hAvg || 0),
+      // NEW: echo the active strategy so the app can display it reliably
+      strategy: typeof s.strategy === "string" ? s.strategy : null,
     };
     fs.writeFileSync(p, JSON.stringify(safeSummary, null, 2));
   } catch {}
@@ -34,7 +36,6 @@ function finalizeSummary(dir, s) {
 }
 
 // ---- 24h P/L support (snapshots) ----
-// We keep a small rolling history in JSONL: one point per cycle.
 const HISTORY_FILE = "history.jsonl";
 
 /**
@@ -48,7 +49,6 @@ function updateWithPl24h(dir, summary) {
     const now = Date.now();
     const nowPoint = { t: now, v: Number(summary.currentValue) || 0 };
 
-    // Load existing points
     let pts = [];
     if (fs.existsSync(p)) {
       const lines = fs.readFileSync(p, "utf8").split(/\r?\n/).filter(Boolean);
@@ -63,15 +63,12 @@ function updateWithPl24h(dir, summary) {
         .filter(Boolean);
     }
 
-    // Append current and trim to ~24h window (plus a small 5m buffer for baseline)
     pts.push(nowPoint);
     const cutoff = now - 24 * 60 * 60 * 1000;
     const trimmed = pts.filter((pt) => pt.t >= cutoff - 5 * 60 * 1000);
 
-    // Persist back
     fs.writeFileSync(p, trimmed.map((pt) => JSON.stringify(pt)).join("\n"));
 
-    // Baseline at (or just before) 24h ago
     let baseline = null;
     for (let i = trimmed.length - 1; i >= 0; i--) {
       if (trimmed[i].t <= cutoff) {
@@ -82,8 +79,6 @@ function updateWithPl24h(dir, summary) {
     if (baseline == null) baseline = trimmed.length ? trimmed[0].v : nowPoint.v;
 
     const total = (Number(summary.currentValue) || 0) - (Number(baseline) || 0);
-
-    // Average per hour across the covered window (≤ 24h)
     const spanMs = trimmed.length
       ? trimmed[trimmed.length - 1].t - trimmed[0].t
       : 0;

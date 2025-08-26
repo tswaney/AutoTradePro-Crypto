@@ -1,246 +1,277 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// mobile/src/screens/BotsScreen.tsx
+import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { listBots, getBotSummary, type BotSummary } from "../api";
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:4000";
+type BotListItem = { id: string; name?: string; status?: string };
 
-type Bot = {
-  id: string;
-  name?: string;
-  status?: "running" | "stopped" | string;
-  strategyId?: string;
-  strategyName?: string;
-};
+// Visible tag so we can prove this screen is mounted
+const BUILD_TAG = "BotsScreen v4";
 
-type Summary = {
-  totalPL?: number | null;
-  locked?: number | null;
-  currentValue?: number | null;
-};
-
-type SummaryResp = {
-  id: string;
-  name?: string;
-  status?: string;
-  strategyId?: string;
-  strategyName?: string;
-  summary?: Summary;
-};
-
-function money(v?: number | null) {
-  if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 2,
-    }).format(v);
-  } catch {
-    return `$${Number(v).toFixed(2)}`;
-  }
-}
-
-export default function BotsScreen() {
-  const nav = useNavigation<any>();
-  const [bots, setBots] = useState<Bot[]>([]);
-  const [summaries, setSummaries] = useState<Record<string, Summary>>({});
-  const [statuses, setStatuses] = useState<Record<string, string>>({}); // live status per bot
+export default function BotsScreen({ navigation }: any) {
+  const [bots, setBots] = useState<BotListItem[]>([]);
+  const [summaries, setSummaries] = useState<Record<string, BotSummary>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const botsRef = useRef<Bot[]>([]); // avoid stale closure in setInterval
 
-  // keep ref in sync
+  // Load bot list
   useEffect(() => {
-    botsRef.current = bots;
-  }, [bots]);
-
-  const fetchBots = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await fetch(`${API_BASE}/api/bots`);
-      if (!r.ok) throw new Error(`GET /api/bots -> ${r.status}`);
-      const data: Bot[] = await r.json();
-      setBots(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.warn("fetchBots:", e);
-      setBots([]);
-    } finally {
-      setLoading(false);
-    }
+    let alive = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const b = await listBots();
+        if (!alive) return;
+        setBots(b);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const fetchSummaries = useCallback(async (list: Bot[]) => {
-    if (!list.length) {
-      setSummaries({});
-      setStatuses({});
-      return;
-    }
-    try {
+  // Poll summaries every 3s whenever the list changes
+  useEffect(() => {
+    let alive = true;
+    const pull = async () => {
+      if (!bots.length) return;
       const pairs = await Promise.all(
-        list.map(async (b) => {
+        bots.map(async (bot) => {
           try {
-            const r = await fetch(`${API_BASE}/api/bots/${encodeURIComponent(b.id)}/summary`);
-            if (!r.ok) throw new Error(`summary ${b.id} -> ${r.status}`);
-            const js: SummaryResp = await r.json();
-            return [b.id, js.summary ?? {}, js.status ?? b.status ?? "stopped"] as const;
-          } catch (e) {
-            // keep previous if any
-            return [b.id, summaries[b.id] ?? {}, statuses[b.id] ?? (b.status ?? "stopped")] as const;
+            const s = await getBotSummary(bot.id);
+            return [bot.id, s] as const;
+          } catch {
+            return [bot.id, undefined] as const;
           }
         })
       );
-      const nextSummaries: Record<string, Summary> = {};
-      const nextStatuses: Record<string, string> = {};
-      for (const [id, sum, st] of pairs) {
-        nextSummaries[id] = sum;
-        nextStatuses[id] = st;
-      }
-      setSummaries(nextSummaries);
-      setStatuses(nextStatuses);
-    } catch (e) {
-      console.warn("fetchSummaries:", e);
-    }
-  }, [summaries, statuses]);
+      if (!alive) return;
+      const map: Record<string, BotSummary> = {};
+      for (const [id, s] of pairs) if (s) map[id] = s;
+      setSummaries((prev) => ({ ...prev, ...map }));
+      console.info("[BotsScreen] summaries:", map);
+    };
+    pull();
+    const t = setInterval(pull, 3000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [bots]);
 
-  const loadAll = useCallback(async () => {
-    await fetchBots();
-  }, [fetchBots]);
-
-  // load summaries whenever bots change
-  useEffect(() => {
-    fetchSummaries(bots);
-  }, [bots, fetchSummaries]);
-
-  // focus & polling
-  useFocusEffect(
-    useCallback(() => {
-      loadAll();
-      pollRef.current = setInterval(() => {
-        const list = botsRef.current;
-        if (list && list.length) fetchSummaries(list);
-      }, 3000);
-      return () => {
-        if (pollRef.current) clearInterval(pollRef.current);
-      };
-    }, [loadAll, fetchSummaries])
-  );
-
-  const onRefresh = useCallback(async () => {
+  const doRefresh = async () => {
     setRefreshing(true);
-    await loadAll();
-    setRefreshing(false);
-  }, [loadAll]);
+    try {
+      const b = await listBots();
+      setBots(b);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
-  const onOpen = useCallback(
-    (b: Bot) => {
-      // NOTE: if your navigator uses "Bot" instead of "BotDetail",
-      // change the route name below to "Bot".
-      nav.navigate("BotDetail", {
-        id: b.id,               // also pass as 'id' for compatibility
-        botId: b.id,
-        name: b.name ?? b.id,   // and 'name'/'botName'
-        botName: b.name ?? b.id,
-        strategyId: b.strategyId,
-        strategyName: b.strategyName,
-      });
-    },
-    [nav]
-  );
+  const openBot = (bot: BotListItem) =>
+    navigation?.navigate?.("BotDetail", { id: bot.id, name: bot.name || bot.id });
 
-  const renderItem = useCallback(
-    ({ item }: { item: Bot }) => {
-      const s = summaries[item.id] ?? {};
-      const liveStatus = statuses[item.id] ?? item.status ?? "—";
-      return (
-        <TouchableOpacity onPress={() => onOpen(item)} style={styles.card} activeOpacity={0.8}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
-            <Text style={styles.title}>{item.name ?? item.id}</Text>
-            <Text style={[styles.status, liveStatus === "running" ? styles.ok : styles.dim]}>
-              {liveStatus}
-            </Text>
-          </View>
-
-          <View style={styles.row}>
-            <Text style={styles.label}>Total P/L</Text>
-            <Text style={styles.value}>{money(s.totalPL)}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Locked</Text>
-            <Text style={styles.value}>{money(s.locked)}</Text>
-          </View>
-          <View style={styles.rowLast}>
-            <Text style={styles.label}>Current Portfolio Value</Text>
-            <Text style={styles.value}>{money(s.currentValue)}</Text>
-          </View>
-        </TouchableOpacity>
-      );
-    },
-    [onOpen, summaries, statuses]
-  );
-
-  const empty = useMemo(
-    () => (
-      <View style={styles.emptyBox}>
-        {loading ? (
-          <>
-            <ActivityIndicator />
-            <Text style={styles.dim}>Loading bots…</Text>
-          </>
-        ) : (
-          <Text style={styles.dim}>No bots yet.</Text>
-        )}
-      </View>
-    ),
-    [loading]
-  );
+  const currency = (n?: number | null) => {
+    if (n == null) return "—";
+    try {
+      return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
+    } catch {
+      return `$${Number(n || 0).toFixed(2)}`;
+    }
+  };
 
   return (
-    <View style={{ flex: 1, padding: 16 }}>
-      <FlatList
-        data={bots}
-        keyExtractor={(x) => x.id}
-        renderItem={renderItem}
-        ListEmptyComponent={empty}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9fb0c3" />}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-      />
+    <View style={{ flex: 1, backgroundColor: "#0b0c10" }}>
+      {/* Header */}
+      <View
+        style={{
+          paddingHorizontal: 16,
+          paddingTop: 14,
+          paddingBottom: 8,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Text style={{ color: "white", fontSize: 22, fontWeight: "800" }}>
+          Bots <Text style={{ color: "#6aa2ff", fontSize: 12 }}>({BUILD_TAG})</Text>
+        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <TouchableOpacity
+            onPress={() => navigation?.navigate?.("NewBot")}
+            style={{ marginHorizontal: 8 }}
+          >
+            <Text style={{ color: "#8ab4f8", fontWeight: "700" }}>New Bot</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={doRefresh} style={{ marginHorizontal: 8 }}>
+            <Text style={{ color: "#8ab4f8", fontWeight: "700" }}>
+              {refreshing ? "…" : "Refresh"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => navigation?.navigate?.("Auth")}
+            style={{ marginHorizontal: 8 }}
+          >
+            <Text style={{ color: "#8ab4f8", fontWeight: "700" }}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {loading && bots.length === 0 ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
+          {bots.map((bot) => (
+            <BotCard
+              key={bot.id}
+              bot={bot}
+              summary={summaries[bot.id]}
+              setSummary={(s) =>
+                setSummaries((prev) => ({ ...prev, [bot.id]: s }))
+              }
+              onPress={() => openBot(bot)}
+            />
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#0f1620",
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  title: { color: "white", fontWeight: "700", fontSize: 16 },
-  status: { fontWeight: "700", fontSize: 12 },
-  ok: { color: "#22c55e" },
-  dim: { color: "#8ea0b2" },
+function StatusPill({ status }: { status?: string }) {
+  const isRunning = (status || "").toLowerCase() === "running";
+  const bg = isRunning ? "#123e9c" : "#3d3d3d";
+  const fg = isRunning ? "#cfe0ff" : "#d9e1e8";
+  const label = isRunning ? "running" : "stopped";
+  return (
+    <View
+      style={{
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        backgroundColor: bg,
+      }}
+    >
+      <Text style={{ color: fg, fontWeight: "700", fontSize: 12 }}>{label}</Text>
+    </View>
+  );
+}
 
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: 8,
-    paddingBottom: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.06)",
-  },
-  rowLast: { flexDirection: "row", justifyContent: "space-between", paddingTop: 8 },
-  label: { color: "#9fb0c3" },
-  value: { color: "white", fontWeight: "700" },
+function Metric({
+  label,
+  value,
+  align = "left",
+}: {
+  label: string;
+  value: string;
+  align?: "left" | "center" | "right";
+}) {
+  return (
+    <View style={{ width: "33.3%" }}>
+      <Text
+        style={{ color: "#a6adb4", fontSize: 12, textAlign: align, marginBottom: 2 }}
+      >
+        {label}
+      </Text>
+      <Text
+        style={{ color: "white", fontWeight: "700", fontSize: 14, textAlign: align }}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
 
-  emptyBox: { alignItems: "center", justifyContent: "center", marginTop: 60, gap: 10 },
-});
+function BotCard({
+  bot,
+  summary,
+  setSummary,
+  onPress,
+}: {
+  bot: BotListItem;
+  summary?: BotSummary;
+  setSummary: (s: BotSummary) => void;
+  onPress: () => void;
+}) {
+  // Self-fetch once so cards never stay blank
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (summary) return;
+      try {
+        const s = await getBotSummary(bot.id);
+        if (alive && s) setSummary(s);
+      } catch {}
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [bot.id]);
+
+  const currency = (n?: number | null) => {
+    if (n == null) return "—";
+    try {
+      return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
+    } catch {
+      return `$${Number(n || 0).toFixed(2)}`;
+    }
+  };
+
+  const pl24hAvg = summary?.pl24hAvg ?? summary?.pl24h ?? summary?.dayPL ?? null;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={{
+        backgroundColor: "#13161b",
+        borderRadius: 14,
+        padding: 14,
+        marginVertical: 6,
+      }}
+    >
+      {/* top row */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 8,
+        }}
+      >
+        <Text style={{ color: "white", fontSize: 18, fontWeight: "800" }}>
+          {bot.name || bot.id}
+        </Text>
+        <StatusPill status={bot.status} />
+      </View>
+
+      {/* metrics row */}
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          backgroundColor: "#0e1116",
+          borderRadius: 10,
+          paddingVertical: 10,
+          paddingHorizontal: 12,
+        }}
+      >
+        <Metric label="24h P/L (avg)" value={pl24hAvg == null ? "—" : currency(pl24hAvg)} />
+        <Metric label="Current Value" value={summary ? currency(summary.currentValue) : "—"} />
+        <Metric label="Total P/L" value={summary ? currency(summary.totalPL) : "—"} align="right" />
+      </View>
+    </TouchableOpacity>
+  );
+}

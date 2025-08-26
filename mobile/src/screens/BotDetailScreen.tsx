@@ -8,12 +8,14 @@ import {
   ActivityIndicator,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Alert,
 } from "react-native";
 import {
-  getBotSummary,
+  getBotOverview,
   getBotLog,
   startBot,
   stopBot,
+  deleteBot,
   type BotSummary,
 } from "../api";
 
@@ -22,7 +24,7 @@ type Props = {
   navigation: any;
 };
 
-export default function BotDetailScreen({ route }: Props) {
+export default function BotDetailScreen({ route, navigation }: Props) {
   const botId = route?.params?.id || "default";
   const botName = route?.params?.name || botId;
 
@@ -31,47 +33,49 @@ export default function BotDetailScreen({ route }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
-  // Persist strategy name (parse once, never clear)
+  // Strategy label: prefer summary.strategy; fallback to parsed log, then route param
   const [strategy, setStrategy] = useState<string>(
     (route?.params?.strategy || "—").trim()
   );
 
-  // Poll summary + logs every 3s
+  // Poll overview (status + summary) and logs every 3s
   useEffect(() => {
     let alive = true;
+
     const pull = async () => {
       try {
-        const s = await getBotSummary(botId);
-        if (alive) {
-          setSummary(s);
-          setIsRunning(true);
+        const o = await getBotOverview(botId);
+        if (!alive) return;
+        setSummary(o.summary);
+        setIsRunning((o.status || "").toLowerCase() === "running");
+        // If strategy arrives in summary, lock it in
+        if (o.summary.strategy && o.summary.strategy !== "—") {
+          setStrategy(o.summary.strategy);
         }
       } catch {
         if (alive) setIsRunning(false);
       }
       try {
         const txt = await getBotLog(botId, 300);
-        if (alive) setLogText(txt || "No log output yet…");
+        if (!alive) return;
+        setLogText(txt || "No log output yet…");
+        // parse strategy from log only if we don't already have it
+        if (!summary?.strategy) {
+          const m = /Auto-selected strategy:\s*(.+)/i.exec(txt);
+          if (m?.[1]) setStrategy(m[1].trim());
+        }
       } catch {
         if (alive) setLogText("No log output yet…");
       }
     };
+
     pull();
     const id = setInterval(pull, 3000);
     return () => {
       alive = false;
       clearInterval(id);
     };
-  }, [botId]);
-
-  // Parse "Auto-selected strategy: ..." once when present
-  useEffect(() => {
-    const m = /Auto-selected strategy:\s*(.+)/i.exec(logText);
-    if (m?.[1]) {
-      const found = m[1].trim();
-      if (found && found !== "—") setStrategy(found);
-    }
-  }, [logText]);
+  }, [botId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ===== Logs: Freeze / Unfreeze + autoscroll-to-bottom behavior =====
   const logScrollRef = useRef<ScrollView>(null);
@@ -124,6 +128,8 @@ export default function BotDetailScreen({ route }: Props) {
     try {
       await startBot(botId);
       setIsRunning(true);
+    } catch (e) {
+      Alert.alert("Start failed", String(e instanceof Error ? e.message : e));
     } finally {
       setLoading(false);
     }
@@ -133,12 +139,39 @@ export default function BotDetailScreen({ route }: Props) {
     try {
       await stopBot(botId);
       setIsRunning(false);
+    } catch (e) {
+      Alert.alert("Stop failed", String(e instanceof Error ? e.message : e));
     } finally {
       setLoading(false);
     }
   }
   async function onDelete() {
-    // Placeholder — add your DELETE API if/when available.
+    if (isRunning) {
+      Alert.alert("Cannot delete while running", "Stop the bot first.");
+      return;
+    }
+    Alert.alert(
+      "Delete Bot",
+      `Are you sure you want to delete "${botName}"? This removes its data folder.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await deleteBot(botId);
+              navigation?.goBack?.();
+            } catch (e) {
+              Alert.alert("Delete failed", String(e instanceof Error ? e.message : e));
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
   }
 
   return (
@@ -155,8 +188,9 @@ export default function BotDetailScreen({ route }: Props) {
           >
             {botName}
           </Text>
+          {/* Strategy from summary (preferred) or parsed log */}
           <Text style={{ color: "#c5c6c7", fontSize: 14, fontWeight: "700" }} numberOfLines={2}>
-            {strategy}
+            {summary?.strategy || strategy}
           </Text>
         </View>
 
@@ -205,7 +239,7 @@ export default function BotDetailScreen({ route }: Props) {
           >
             <Text style={{ color: "white", fontSize: 16, fontWeight: "700" }}>Logs</Text>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <PillButton text={autoScroll ? "Live" : "Frozen"} onPress={onFreezeToggle} kind={autoScroll ? "live" : "frozen"} />
+              <PillButton text={autoScroll ? "Live" : "Frozen"} onPress={() => setAutoScroll((v) => !v)} kind={autoScroll ? "live" : "frozen"} />
               <View style={{ width: 8 }} />
               <PillButton text="Jump to bottom" onPress={jumpToBottom} />
             </View>
@@ -215,8 +249,7 @@ export default function BotDetailScreen({ route }: Props) {
             style={{
               backgroundColor: "#0e1116",
               borderRadius: 12,
-              // Fixed, scrollable log window so the page itself doesn't need to be scrolled
-              height: 260,
+              height: 260, // fixed, scrollable window
               padding: 12,
             }}
           >
@@ -258,7 +291,7 @@ export default function BotDetailScreen({ route }: Props) {
           <View style={{ width: 10 }} />
           <Btn text="Stop" onPress={onStop} disabled={!isRunning || loading} color="#2b3440" />
           <View style={{ width: 10 }} />
-          <Btn text="Delete" onPress={onDelete} disabled={loading} color="#c92132" />
+          <Btn text="Delete" onPress={onDelete} disabled={loading || isRunning} color="#c92132" />
           {loading ? <ActivityIndicator style={{ marginLeft: 8 }} /> : null}
         </View>
       </View>
