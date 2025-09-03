@@ -116,39 +116,50 @@ export default function BotDetailScreen({ route, navigation }: Props) {
   }
   const displayMoney = (v?: number | null) => (v == null ? "—" : currency(v));
 
-  // Parse "1234 min" -> 1234
-  const minutesFromDuration = (d?: string | null) => {
-    if (!d) return 0;
-    const m = /(-?\d+)\s*min/i.exec(String(d));
-    return m ? Math.max(0, parseInt(m[1], 10)) : 0;
+  // Parse duration: accepts minutes as number OR strings like "7h 21m 53s" / "441 min"
+  const toMinutes = (d?: number | string | null) => {
+    if (d == null) return 0;
+    if (typeof d === "number" && isFinite(d)) return Math.max(0, d);
+    const s = String(d);
+    // e.g., "7h 21m 53s"
+    const hms = /(?:(\d+)\s*h)?\s*(\d+)\s*m(?:in)?(?:\s*(\d+)\s*s)?/i.exec(s);
+    if (hms) {
+      const h = Number(hms[1] || 0), m = Number(hms[2] || 0), sec = Number(hms[3] || 0);
+      return h * 60 + m + Math.floor(sec / 60);
+    }
+    // e.g., "441 min"
+    const mOnly = /(-?\d+)\s*min/i.exec(s);
+    if (mOnly) return Math.max(0, parseInt(mOnly[1], 10));
+    const n = Number(s);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
   };
 
-  // Derived numbers for the requested new fields
+  // ===== Derivations for the metrics you display =====
   const {
     rate24hPerHr,
     overallAvgPerHrSinceStart,
     est24hProfitFromRate,
   } = useMemo(() => {
-    const mins = minutesFromDuration(summary?.duration);
+    const mins = toMinutes(summary?.duration);
     const hoursSinceStart = mins > 0 ? mins / 60 : 0;
 
-    // 24h P/L (avg) Rate Per Hr: prefer pl24hAvg; else pl24h/24; else 0
-    const r24 =
-      summary?.pl24hAvg != null
-        ? Number(summary.pl24hAvg)
-        : summary?.pl24h != null
-        ? Number(summary.pl24h) / 24
-        : 0;
+    // Prefer canonical fields from summary; fall back to safe computations.
+    const rate24 =
+      summary?.pl24hAvgRatePerHour ??
+      (summary?.pl24h != null ? Number(summary.pl24h) / 24 : null);
 
-    // Overall 24h P/L (avg) Rate Per Hr: TotalPL divided by hours since start
     const overall =
-      hoursSinceStart > 0 ? Number(summary?.totalPL || 0) / hoursSinceStart : 0;
+      summary?.overall24hAvgRatePerHour ??
+      (hoursSinceStart > 0 && summary?.totalPL != null
+        ? Number(summary.totalPL) / hoursSinceStart
+        : null);
 
-    // 24h Estimated Profit: the 24h hourly rate * 24
-    const est = r24 * 24;
+    const est =
+      summary?.pl24hEstimatedProfit ??
+      (rate24 != null ? rate24 * 24 : null);
 
     return {
-      rate24hPerHr: r24,
+      rate24hPerHr: rate24,
       overallAvgPerHrSinceStart: overall,
       est24hProfitFromRate: est,
     };
@@ -213,7 +224,6 @@ export default function BotDetailScreen({ route, navigation }: Props) {
       navigation.navigate("NewBotConfig", {
         botId,
         mode: "edit",
-        // Pass whatever we have so the form can prefill (keeps your current create screen unchanged)
         initialConfig: {
           strategy: summary?.strategy ?? strategy ?? null,
           name: botName,
@@ -256,7 +266,6 @@ export default function BotDetailScreen({ route, navigation }: Props) {
             >
               {botName}
             </Text>
-            {/* Strategy from summary (preferred) or parsed log */}
             <Text
               style={{ color: "#c5c6c7", fontSize: 14, fontWeight: "700" }}
               numberOfLines={2}
@@ -295,11 +304,11 @@ export default function BotDetailScreen({ route, navigation }: Props) {
           </Text>
 
           <Row label="Beginning Portfolio Value" value={displayMoney(summary?.beginningPortfolioValue)} />
-          <Row label="Duration (min)" value={summary?.duration || "—"} />
+          <Row label="Duration (min)" value={String(summary?.duration ?? "—")} />
           <Row label="Buys" value={String(summary?.buys ?? 0)} />
           <Row label="Sells" value={String(summary?.sells ?? 0)} />
 
-          {/* Renamed + new rows */}
+          {/* Corrected metric mappings */}
           <Row label="24h P/L (avg) Rate Per Hr" value={displayMoney(rate24hPerHr)} />
           <Row label="24h Estimated Profit" value={displayMoney(est24hProfitFromRate)} />
           <Row label="Overall 24h P/L (avg) Rate Per Hr" value={displayMoney(overallAvgPerHrSinceStart)} />
@@ -344,7 +353,7 @@ export default function BotDetailScreen({ route, navigation }: Props) {
             style={{
               backgroundColor: "#0e1116",
               borderRadius: 12,
-              height: 200, // fits screen without page scrolling; logs remain scrollable
+              height: 200,
               padding: 12,
             }}
           >

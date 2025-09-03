@@ -1,181 +1,342 @@
-import React, { useEffect, useState } from "react";
+// mobile/src/screens/BotsScreen.tsx
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
-import { listBots, getBotSummary, type BotSummary } from "../api";
+import { useFocusEffect } from "@react-navigation/native";
+import { listBots, getBotSummary } from "../api";
 
 type BotListItem = { id: string; name?: string; status?: string };
 
 // Visible tag to verify the deployed screen version
-const BUILD_TAG = "BotsScreen v7 (strategy + metrics)";
+const BUILD_TAG = "BotsScreen v10 (colors + sparkline)";
+
+type BotRow = BotListItem & {
+  // mapped/flattened summary fields (best-effort)
+  strategy?: string;
+  totalPL?: number | null;
+  locked?: number | null;
+  cryptoMkt?: number | null;
+  cash?: number | null;
+  currentValue?: number | null;
+
+  // derived
+  rate24hPerHr?: number | null;            // 24h P/L (avg) Rate Per Hr
+  overallAvgPerHrSinceStart?: number | null;
+
+  // optional timeseries for sparkline
+  plHistory?: number[] | null;
+};
 
 export default function BotsScreen({ navigation }: any) {
   const [bots, setBots] = useState<BotListItem[]>([]);
-  const [summaries, setSummaries] = useState<Record<string, BotSummary>>({});
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, BotRow>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Load bot list
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const b = await listBots();
-        if (!alive) return;
-        setBots(b);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const REFRESH_MS = 4000;
 
-  // Poll summaries every 3s
-  useEffect(() => {
-    let alive = true;
-    const pull = async () => {
-      if (!bots.length) return;
-      const pairs = await Promise.all(
-        bots.map(async (bot) => {
-          try {
-            const s = await getBotSummary(bot.id);
-            return [bot.id, s] as const;
-          } catch {
-            return [bot.id, undefined] as const;
-          }
-        })
-      );
-      if (!alive) return;
-      const map: Record<string, BotSummary> = {};
-      for (const [id, s] of pairs) if (s) map[id] = s;
-      setSummaries((prev) => ({ ...prev, ...map }));
-    };
-    pull();
-    const t = setInterval(pull, 3000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [bots]);
+  // --- Colors --------------------------------------------------------------
+  const c = {
+    bg: "#0B1117",
+    card: "#0E131A",
+    border: "#283142",
+    text: "#E6EDF3",
+    sub: "#97A3B6",
+    pos: "#3fb950", // green
+    neg: "#f85149", // red
+    muted: "#7b8794",
+    accent: "#8ab4f8",
+  };
 
-  const doRefresh = async () => {
-    setRefreshing(true);
+  // --- Helpers -------------------------------------------------------------
+
+  const currency = (n?: number | null) => {
+    if (n == null || !isFinite(Number(n))) return "—";
     try {
-      const b = await listBots();
-      setBots(b);
-    } finally {
-      setRefreshing(false);
+      return Number(n).toLocaleString(undefined, { style: "currency", currency: "USD" });
+    } catch {
+      return `$${Number(n).toFixed(2)}`;
     }
   };
 
+  const signedColor = (n?: number | null) => {
+    if (n == null || !isFinite(Number(n))) return c.sub;
+    if (Number(n) > 0) return c.pos;
+    if (Number(n) < 0) return c.neg;
+    return c.sub;
+  };
+
+  // Parse duration: number of minutes OR strings like "7h 21m 53s" / "441 min"
+  const toMinutes = (d?: number | string | null) => {
+    if (d == null) return 0;
+    if (typeof d === "number" && isFinite(d)) return Math.max(0, d);
+    const s = String(d);
+    const hms = /(?:(\d+)\s*h)?\s*(\d+)\s*m(?:in)?(?:\s*(\d+)\s*s)?/i.exec(s);
+    if (hms) {
+      const h = Number(hms[1] || 0), m = Number(hms[2] || 0), sec = Number(hms[3] || 0);
+      return h * 60 + m + Math.floor(sec / 60);
+    }
+    const mOnly = /(-?\d+)\s*min/i.exec(s);
+    if (mOnly) return Math.max(0, parseInt(mOnly[1], 10));
+    const n = Number(s);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  };
+
+  // Try multiple common keys for PL history; returns null if not found
+  const extractPlHistory = (payload: any): number[] | null => {
+    const s = payload?.summary ?? payload ?? {};
+    const cand =
+      s?.metrics?.totalPLHistory ||
+      s?.metrics?.plHistory ||
+      s?.totalPLHistory ||
+      s?.pnlHistory ||
+      s?.profitHistory ||
+      null;
+    if (!Array.isArray(cand)) return null;
+    const nums = cand.map((x: any) => Number(x)).filter((x: any) => isFinite(x));
+    return nums.length ? nums : null;
+  };
+
+  // Normalize a `/api/bots/:id/summary` payload into the fields we render
+  const mapSummary = (base: BotListItem, payload: any): BotRow => {
+    // Your server returns: { id, name, status, summary: {...}, (flattened fields)... }
+    const s = payload?.summary ?? payload ?? {};
+    const durationMins = toMinutes(s?.duration);
+
+    // Prefer canonical fields; fall back intelligently
+    const rate24hPerHr =
+      s?.pl24hAvgRatePerHour ??
+      s?.overall24hAvgRatePerHour ??
+      (s?.pl24h != null ? Number(s.pl24h) / 24 : null);
+
+    const overallAvgPerHrSinceStart =
+      s?.overall24hAvgRatePerHour ??
+      (durationMins > 0 && s?.totalPL != null
+        ? Number(s.totalPL) / (durationMins / 60)
+        : null);
+
+    return {
+      ...base,
+      strategy: s?.strategy ?? s?.strategyName ?? s?.strategyLabel ?? undefined,
+      totalPL: s?.totalPL ?? s?.dayPL ?? s?.totals?.profit ?? null,
+      locked: s?.locked ?? s?.totals?.locked ?? s?.cash?.locked ?? null,
+      cryptoMkt: s?.cryptoMkt ?? null,
+      cash: s?.cash ?? null,
+      currentValue:
+        s?.currentValue ?? s?.currentPortfolioValue ?? s?.totals?.portfolioValue ?? s?.portfolio?.value ?? null,
+      rate24hPerHr,
+      overallAvgPerHrSinceStart,
+      plHistory: extractPlHistory(payload),
+    };
+  };
+
+  // --- Data loading --------------------------------------------------------
+
+  const loadList = useCallback(async () => {
+    const b = await listBots();
+    setBots(b || []);
+    return b || [];
+  }, []);
+
+  const loadSummaries = useCallback(async (ids: string[]) => {
+    const updates: Record<string, BotRow> = {};
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const payload = await getBotSummary(id);
+          const base = bots.find((b) => b.id === id) || { id };
+          updates[id] = mapSummary(base, payload);
+        } catch {
+          if (rows[id]) updates[id] = rows[id]; // keep previous values if fetch fails
+        }
+      })
+    );
+    setRows((prev) => ({ ...prev, ...updates }));
+  }, [bots, rows]);
+
+  const refreshAll = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const b = await loadList();
+      await loadSummaries(b.map((x) => x.id));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [loadList, loadSummaries]);
+
+  // Initial load
+  useEffect(() => {
+    refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Live polling (while focused)
+  useFocusEffect(
+    useCallback(() => {
+      let timer: any;
+      const tick = async () => {
+        try {
+          const b = await loadList();
+          await loadSummaries(b.map((x) => x.id));
+        } catch {}
+      };
+      timer = setInterval(tick, REFRESH_MS);
+      return () => clearInterval(timer);
+    }, [loadList, loadSummaries])
+  );
+
+  // --- Rendering -----------------------------------------------------------
+
+  const orderedRows: BotRow[] = useMemo(() => {
+    const arr = bots.map((b) => rows[b.id] || { ...b });
+    return arr;
+  }, [bots, rows]);
+
   const openBot = (bot: BotListItem) =>
-    navigation?.navigate?.("BotDetail", { id: bot.id, name: bot.name || bot.id });
+    navigation?.navigate?.("BotDetail", { id: bot.id, name: bot.name });
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator />
+        <Text style={{ color: c.sub, marginTop: 10 }}>Loading… {BUILD_TAG}</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#0b0c10" }}>
-      {/* Header */}
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingTop: 14,
-          paddingBottom: 8,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <Text style={{ color: "white", fontSize: 22, fontWeight: "800" }}>
-          Bots <Text style={{ color: "#6aa2ff", fontSize: 12 }}>({BUILD_TAG})</Text>
-        </Text>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <TouchableOpacity
-            onPress={() => navigation?.navigate?.("NewBot")}
-            style={{ marginHorizontal: 8 }}
-          >
-            <Text style={{ color: "#8ab4f8", fontWeight: "700" }}>New Bot</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={doRefresh} style={{ marginHorizontal: 8 }}>
-            <Text style={{ color: "#8ab4f8", fontWeight: "700" }}>
-              {refreshing ? "…" : "Refresh"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation?.navigate?.("Auth")}
-            style={{ marginHorizontal: 8 }}
-          >
-            <Text style={{ color: "#8ab4f8", fontWeight: "700" }}>Sign out</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: c.bg }}
+      contentContainerStyle={{ padding: 16 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} />}
+    >
+      <Text style={{ color: "#55667a", fontSize: 12, marginBottom: 8 }}>{BUILD_TAG}</Text>
 
-      {loading && bots.length === 0 ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator />
-        </View>
+      {orderedRows.length === 0 ? (
+        <Text style={{ color: c.sub }}>No bots yet.</Text>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
-          {bots.map((bot) => (
-            <BotCard
-              key={bot.id}
-              bot={bot}
-              summary={summaries[bot.id]}
-              setSummary={(s) =>
-                setSummaries((prev) => ({ ...prev, [bot.id]: s }))
-              }
-              onPress={() => openBot(bot)}
-            />
-          ))}
-        </ScrollView>
+        orderedRows.map((row) => (
+          <BotCard
+            key={row.id}
+            row={row}
+            onPress={() => openBot(row)}
+            currency={currency}
+            colors={c}
+          />
+        ))
       )}
-    </View>
+    </ScrollView>
   );
 }
 
-function StatusPill({ status }: { status?: string }) {
-  const isRunning = (status || "").toLowerCase() === "running";
-  const bg = isRunning ? "#123e9c" : "#3d3d3d";
-  const fg = isRunning ? "#cfe0ff" : "#d9e1e8";
-  const label = isRunning ? "running" : "stopped";
+// --- Small presentational components --------------------------------------
+
+function BotCard({
+  row,
+  onPress,
+  currency,
+  colors,
+}: {
+  row: BotRow;
+  onPress: () => void;
+  currency: (n?: number | null) => string;
+  colors: Record<string, string>;
+}) {
+  const name = row.name || row.id;
+  const statusLine = `${row.status || "—"}${row.strategy ? ` • ${row.strategy}` : ""}`;
+
+  const totalPLColor = signedColorLocal(row.totalPL, colors);
+  const rate24Color = signedColorLocal(row.rate24hPerHr, colors);
+  const overallRateColor = signedColorLocal(row.overallAvgPerHrSinceStart, colors);
+
   return (
-    <View
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
       style={{
-        paddingVertical: 4,
-        paddingHorizontal: 10,
-        borderRadius: 999,
-        backgroundColor: bg,
+        backgroundColor: colors.card,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 12,
+        marginBottom: 12,
       }}
     >
-      <Text style={{ color: fg, fontWeight: "700", fontSize: 12 }}>{label}</Text>
-    </View>
+      {/* Header Row */}
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.text, fontWeight: "700" }}>{name}</Text>
+          <Text style={{ color: colors.sub, marginTop: 2 }}>{statusLine}</Text>
+        </View>
+        {/* Mini sparkline (Total P/L history if available) */}
+        <Sparkline
+          data={row.plHistory || null}
+          width={96}
+          height={28}
+          colors={colors}
+        />
+        <Text style={{ color: colors.sub, fontSize: 24, marginLeft: 8 }}>›</Text>
+      </View>
+
+      {/* Metrics */}
+      <View style={{ marginTop: 8 }}>
+        <Metric label="Total P/L" value={currency(row.totalPL)} valueColor={totalPLColor} colors={colors} />
+        <Metric
+          label="24h P/L (avg) Rate Per Hr"
+          value={row.rate24hPerHr == null ? "—" : currency(row.rate24hPerHr)}
+          valueColor={rate24Color}
+          colors={colors}
+        />
+        <Metric
+          label="Overall 24h P/L (avg) Rate Per Hr"
+          value={row.overallAvgPerHrSinceStart == null ? "—" : currency(row.overallAvgPerHrSinceStart)}
+          valueColor={overallRateColor}
+          colors={colors}
+        />
+        <Metric label="Locked" value={currency(row.locked)} colors={colors} />
+        <Metric label="Crypto (mkt)" value={currency(row.cryptoMkt)} colors={colors} />
+        <Metric label="Current Portfolio Value" value={currency(row.currentValue)} colors={colors} />
+      </View>
+    </TouchableOpacity>
   );
 }
 
 function Metric({
   label,
   value,
+  valueColor,
   align = "left",
+  colors,
 }: {
   label: string;
   value: string;
-  align?: "left" | "center" | "right";
+  valueColor?: string;
+  align?: "left" | "right";
+  colors: Record<string, string>;
 }) {
   return (
-    <View style={{ width: "33.3%" }}>
+    <View
+      style={{
+        flexDirection: "row",
+        justifyContent: "space-between",
+        paddingVertical: 2,
+      }}
+    >
+      <Text style={{ color: colors.sub }}>{label}</Text>
       <Text
-        style={{ color: "#a6adb4", fontSize: 12, textAlign: align, marginBottom: 2 }}
-      >
-        {label}
-      </Text>
-      <Text
-        style={{ color: "white", fontWeight: "700", fontSize: 14, textAlign: align }}
-        numberOfLines={1}
+        style={{
+          color: valueColor || colors.text,
+          fontWeight: "600",
+          textAlign: align,
+          marginLeft: 8,
+        }}
       >
         {value}
       </Text>
@@ -183,124 +344,96 @@ function Metric({
   );
 }
 
-function currency(n?: number | null) {
-  if (n == null) return "—";
-  try {
-    return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
-  } catch {
-    return `$${Number(n || 0).toFixed(2)}`;
-  }
+function signedColorLocal(n?: number | null, colors?: Record<string, string>) {
+  if (n == null || !isFinite(Number(n))) return colors?.sub || "#97A3B6";
+  if (Number(n) > 0) return colors?.pos || "#3fb950";
+  if (Number(n) < 0) return colors?.neg || "#f85149";
+  return colors?.sub || "#97A3B6";
 }
 
-function BotCard({
-  bot,
-  summary,
-  setSummary,
-  onPress,
+/**
+ * Minimal "sparkline" using bars — no external libs.
+ * If data is missing, show a subtle placeholder skeleton.
+ */
+function Sparkline({
+  data,
+  width = 96,
+  height = 28,
+  colors,
 }: {
-  bot: BotListItem;
-  summary?: BotSummary;
-  setSummary: (s: BotSummary) => void;
-  onPress: () => void;
+  data: number[] | null;
+  width?: number;
+  height?: number;
+  colors: Record<string, string>;
 }) {
-  // Self-fetch once so cards never stay blank
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      if (summary) return;
-      try {
-        const s = await getBotSummary(bot.id);
-        if (alive && s) setSummary(s);
-      } catch {}
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [bot.id]);
+  const barGap = 1;
+  const maxBars = 24;
 
-  // Map runner summary fields → card
-  const strategy = (summary as any)?.strategy || "—"; // descriptive name
-  const ratePerHr =
-    (summary as any)?.pl24hAvgRatePerHour ?? null; // 24h P/L (avg) Rate Per Hr
-  const overallRate =
-    (summary as any)?.overall24hAvgRatePerHour ?? null; // Overall 24h P/L (avg) Rate Per Hr
-  const totalPL = (summary as any)?.totalPL ?? null;
-  const locked = (summary as any)?.locked ?? null;
-  const currentValue = (summary as any)?.currentValue ?? null;
-  const cryptoMkt = (summary as any)?.cryptoMkt ?? null;
+  // Placeholder skeleton bars when no data
+  if (!data || !data.length) {
+    const phBars = 16;
+    const bw = Math.max(2, Math.floor((width - (phBars - 1) * barGap) / phBars));
+    return (
+      <View
+        style={{
+          width,
+          height,
+          marginLeft: 8,
+          flexDirection: "row",
+          alignItems: "flex-end",
+        }}
+      >
+        {Array.from({ length: phBars }).map((_, i) => (
+          <View
+            key={i}
+            style={{
+              width: bw,
+              height: 6 + ((i % 3) * 4), // little variation
+              backgroundColor: "#1c2430",
+              marginLeft: i === 0 ? 0 : barGap,
+              borderRadius: 2,
+            }}
+          />
+        ))}
+      </View>
+    );
+  }
+
+  // Use the last N points
+  const values = data.slice(-maxBars);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(1e-9, max - min);
+
+  const bw = Math.max(2, Math.floor((width - (values.length - 1) * barGap) / values.length));
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.85}
+    <View
       style={{
-        backgroundColor: "#13161b",
-        borderRadius: 14,
-        padding: 14,
-        marginVertical: 6,
+        width,
+        height,
+        marginLeft: 8,
+        flexDirection: "row",
+        alignItems: "flex-end",
       }}
     >
-      {/* Top row: Bot name + status */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 4,
-        }}
-      >
-        <Text style={{ color: "white", fontSize: 18, fontWeight: "800" }}>
-          {bot.name || bot.id}
-        </Text>
-        <StatusPill status={bot.status} />
-      </View>
-
-      {/* NEW: Descriptive strategy line */}
-      <Text
-        style={{ color: "#c5c6c7", fontSize: 12, marginBottom: 10 }}
-        numberOfLines={1}
-      >
-        {strategy}
-      </Text>
-
-      {/* Metrics row #1 */}
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          backgroundColor: "#0e1116",
-          borderRadius: 10,
-          paddingVertical: 10,
-          paddingHorizontal: 12,
-          marginBottom: 8,
-        }}
-      >
-        <Metric
-          label="24h P/L (avg) / hr"
-          value={ratePerHr == null ? "—" : currency(ratePerHr)}
-        />
-        <Metric label="Current Value" value={currency(currentValue)} />
-        <Metric label="Total P/L" value={currency(totalPL)} align="right" />
-      </View>
-
-      {/* Metrics row #2 */}
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          backgroundColor: "#0e1116",
-          borderRadius: 10,
-          paddingVertical: 10,
-          paddingHorizontal: 12,
-        }}
-      >
-        <Metric
-          label="Overall avg / hr"
-          value={overallRate == null ? "—" : currency(overallRate)}
-        />
-        <Metric label="Locked" value={currency(locked)} />
-        <Metric label="Crypto (mkt)" value={currency(cryptoMkt)} align="right" />
-      </View>
-    </TouchableOpacity>
+      {values.map((v, i) => {
+        const h = 4 + Math.round(((v - min) / range) * (height - 4));
+        const col = v >= (min + range / 2) ? colors.pos : colors.neg;
+        return (
+          <View
+            key={i}
+            style={{
+              width: bw,
+              height: Math.max(3, h),
+              backgroundColor: col,
+              opacity: 0.9,
+              marginLeft: i === 0 ? 0 : barGap,
+              borderRadius: 2,
+            }}
+          />
+        );
+      })}
+    </View>
   );
 }

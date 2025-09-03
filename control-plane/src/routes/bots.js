@@ -132,9 +132,80 @@ function waitForExitOnce(child, ms = 2000) {
   });
 }
 
+/**
+ * Normalize the summary we read from summary.json into a flat shape
+ * that the mobile app can consume directly.
+ *
+ * We keep returning the original nested "summary" object for
+ * backward-compatibility, but ALSO include a flattened set of
+ * top-level fields:
+ *   - descriptiveName
+ *   - totalPL
+ *   - locked
+ *   - currentPortfolioValue
+ *   - ratePerHour24h
+ * (plus a couple extras that may be useful)
+ */
+function normalizeSummary(summary, meta) {
+  const s = summary || {};
+  const descriptiveName =
+    s.descriptiveName ||
+    s.strategy ||
+    s.strategyName ||
+    s.strategyLabel ||
+    meta?.strategyId ||
+    undefined;
+
+  // Prefer pl24hAvgRatePerHour; fall back to overall or any other rate keys we recognize.
+  const ratePerHour24h =
+    s.pl24hAvgRatePerHour ??
+    s.overall24hAvgRatePerHour ??
+    s.ratePerHour24h ??
+    s.metrics?.ratePerHour24h ??
+    s.pl24hRatePerHour ??
+    null;
+
+  // Prefer currentValue; fall back to other portfolio value fields if present.
+  const currentPortfolioValue =
+    s.currentValue ??
+    s.currentPortfolioValue ??
+    s.totals?.portfolioValue ??
+    s.portfolio?.value ??
+    null;
+
+  const totalPL = s.totalPL ?? s.dayPL ?? s.totals?.profit ?? null;
+  const locked = s.locked ?? s.totals?.locked ?? s.cash?.locked ?? null;
+
+  return {
+    descriptiveName,
+    totalPL,
+    locked,
+    currentPortfolioValue,
+    ratePerHour24h,
+
+    // Useful pass-throughs (not strictly required by the app now)
+    beginningPortfolioValue: s.beginningPortfolioValue ?? null,
+    duration: s.duration ?? null,
+    durationText: s.durationText ?? null,
+    buys: s.buys ?? null,
+    sells: s.sells ?? null,
+    pl24h: s.pl24h ?? null,
+    pl24hEstimatedProfit: s.pl24hEstimatedProfit ?? null,
+    cryptoMkt: s.cryptoMkt ?? null,
+    cash: s.cash ?? null,
+    staleCryptoMkt: s.staleCryptoMkt ?? null,
+    staleSymbols: s.staleSymbols ?? null,
+    priceFreshnessMs: s.priceFreshnessMs ?? null,
+  };
+}
+
 const RUN = new Map(); // id -> { proc, pid, status, startedAt }
 const router = express.Router();
 
+/**
+ * GET /api/bots
+ * Returns a lightweight list of bots with id/name/status.
+ */
 router.get("/bots", async (_req, res) => {
   try {
     await ensureDir(dataRoot);
@@ -154,12 +225,17 @@ router.get("/bots", async (_req, res) => {
         status: running ? "running" : rec?.status || meta?.status || "stopped",
       });
     }
+    res.set("Cache-Control", "no-store");
     res.json(items);
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
 
+/**
+ * POST /api/bots
+ * Create a new bot directory, write initial metadata, and seed summary.json.
+ */
 router.post("/bots", async (req, res) => {
   const { name, symbols, strategyId, config } = req.body || {};
   if (!name || typeof name !== "string")
@@ -179,6 +255,7 @@ router.post("/bots", async (req, res) => {
     startedAt: null,
     config: {
       ...(config || {}),
+      // Allow STRATEGY_NAME to be inferred from strategyId when not provided explicitly
       ...(strategyId && !config?.STRATEGY_NAME
         ? { STRATEGY_NAME: String(strategyId) }
         : {}),
@@ -197,6 +274,10 @@ router.post("/bots", async (req, res) => {
   res.json({ ok: true, id, status: "stopped" });
 });
 
+/**
+ * GET /api/bots/:id/status
+ * Returns running/stopped and pid/start time if running.
+ */
 router.get("/bots/:id/status", async (req, res) => {
   const { id } = req.params;
   const dir = await resolveBotDir(id);
@@ -204,6 +285,7 @@ router.get("/bots/:id/status", async (req, res) => {
   const rec = RUN.get(id);
   const pid = rec?.pid ?? meta?.pid ?? null;
   const running = pid && isPidAlive(pid);
+  res.set("Cache-Control", "no-store");
   res.json({
     id,
     status: running ? "running" : "stopped",
@@ -212,6 +294,15 @@ router.get("/bots/:id/status", async (req, res) => {
   });
 });
 
+/**
+ * GET /api/bots/:id/summary
+ * Reads backend/data/<id>/summary.json and returns:
+ *  - legacy structure: { id, name, status, summary: {...} }
+ *  - PLUS a flattened, mobile-friendly view at the top level:
+ *      descriptiveName, totalPL, locked, currentPortfolioValue, ratePerHour24h
+ *
+ * This lets the mobile UI work even if it doesn't know "summary.*" nesting.
+ */
 router.get("/bots/:id/summary", async (req, res) => {
   const { id } = req.params;
   const dir = await resolveBotDir(id);
@@ -221,13 +312,20 @@ router.get("/bots/:id/summary", async (req, res) => {
   const rec = RUN.get(id);
   const pid = rec?.pid ?? meta?.pid ?? null;
   const running = pid && isPidAlive(pid);
+
+  // Start with a safe default
   let summary = defaultSummary();
+
+  // Load current summary.json if present
   if (await exists(sumPath)) {
     try {
       summary = JSON.parse(await fsp.readFile(sumPath, "utf8"));
-    } catch {}
+    } catch {
+      // Corrupt or partial file: keep "summary" as default
+    }
   }
-  // try to report strategy
+
+  // If strategy name is missing, try to infer from logs or meta
   if (!summary.strategy) {
     try {
       const buf = await fsp.readFile(logPath, "utf8").catch(() => "");
@@ -237,14 +335,46 @@ router.get("/bots/:id/summary", async (req, res) => {
     if (!summary.strategy && meta?.strategyId)
       summary.strategy = meta.strategyId;
   }
+
+  // Build flat/mobile view
+  const flat = normalizeSummary(summary, meta);
+
+  res.set("Cache-Control", "no-store");
   res.json({
     id,
     name: id,
     status: running ? "running" : rec?.status || meta?.status || "stopped",
+
+    // Keep original nested payload for compatibility
     summary,
+
+    // 🔥 New, flattened fields (so the app can read directly)
+    descriptiveName: flat.descriptiveName,
+    totalPL: flat.totalPL,
+    locked: flat.locked,
+    currentPortfolioValue: flat.currentPortfolioValue,
+    ratePerHour24h: flat.ratePerHour24h,
+
+    // Optional pass-throughs (handy for other screens/debug)
+    beginningPortfolioValue: flat.beginningPortfolioValue,
+    duration: flat.duration,
+    durationText: flat.durationText,
+    buys: flat.buys,
+    sells: flat.sells,
+    pl24h: flat.pl24h,
+    pl24hEstimatedProfit: flat.pl24hEstimatedProfit,
+    cryptoMkt: flat.cryptoMkt,
+    cash: flat.cash,
+    staleCryptoMkt: flat.staleCryptoMkt,
+    staleSymbols: flat.staleSymbols,
+    priceFreshnessMs: flat.priceFreshnessMs,
   });
 });
 
+/**
+ * GET /api/bots/:id/logs
+ * Returns JSON: last N log lines (default 200).
+ */
 router.get("/bots/:id/logs", async (req, res) => {
   const { id } = req.params;
   const { limit = 200 } = req.query;
@@ -254,12 +384,17 @@ router.get("/bots/:id/logs", async (req, res) => {
     const n = Math.max(1, Math.min(2000, Number(limit) || 200));
     const text = await fsp.readFile(logPath, "utf8").catch(() => "");
     const lines = text.split(/\r?\n/).filter(Boolean);
+    res.set("Cache-Control", "no-store");
     res.json({ id, lines: lines.slice(-n) });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
 
+/**
+ * GET /api/bots/:id/log
+ * Returns plain text: last N log lines (default 200).
+ */
 router.get("/bots/:id/log", async (req, res) => {
   const { id } = req.params;
   const { tail = 200 } = req.query;
@@ -269,6 +404,7 @@ router.get("/bots/:id/log", async (req, res) => {
     const n = Math.max(1, Math.min(2000, Number(tail) || 200));
     const text = await fsp.readFile(logPath, "utf8").catch(() => "");
     const lines = text.split(/\r?\n/).filter(Boolean);
+    res.set("Cache-Control", "no-store");
     res.type("text/plain").send(lines.slice(-n).join("\n"));
   } catch (e) {
     res
@@ -278,6 +414,11 @@ router.get("/bots/:id/log", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/bots/:id/start
+ * Spawns the runner (backend/testPrice_Dev.js) with environment for this bot.
+ * Writes pid/status metadata and verifies early failures.
+ */
 router.post("/bots/:id/start", async (req, res) => {
   const { id } = req.params;
   const dir = await resolveBotDir(id);
@@ -297,12 +438,10 @@ router.post("/bots/:id/start", async (req, res) => {
   }
 
   if (!fs.existsSync(runnerPath)) {
-    return res
-      .status(500)
-      .json({
-        error: "Strategy runner not found",
-        expected: path.relative(repoRoot, runnerPath),
-      });
+    return res.status(500).json({
+      error: "Strategy runner not found",
+      expected: path.relative(repoRoot, runnerPath),
+    });
   }
 
   const logPath = path.join(dir, "testPrice_output.txt");
@@ -342,7 +481,7 @@ router.post("/bots/:id/start", async (req, res) => {
     RUN.set(id, { proc: child, pid, status: "running", startedAt });
     await writeMeta(dir, { status: "running", pid, startedAt });
 
-    // detect instant failure and confirm log started
+    // Detect instant failure and confirm log started
     const [exitedQuickly, logStarted] = await Promise.all([
       waitForExitOnce(child, 2000), // wait 2s for early crash
       waitForLogGrowth(logPath, 3000),
@@ -395,6 +534,10 @@ router.post("/bots/:id/start", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/bots/:id/stop
+ * Attempts a graceful stop, then SIGKILL fallback.
+ */
 router.post("/bots/:id/stop", async (req, res) => {
   const { id } = req.params;
   const rec = RUN.get(id);
@@ -428,6 +571,10 @@ router.post("/bots/:id/stop", async (req, res) => {
   res.json({ ok: true, id, status: "stopped" });
 });
 
+/**
+ * POST /api/bots/:id/delete
+ * Stops the process if running and removes all bot data.
+ */
 router.post("/bots/:id/delete", async (req, res) => {
   const { id } = req.params;
   const rec = RUN.get(id);
