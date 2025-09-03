@@ -1,0 +1,30 @@
+[
+  {
+    "id": "bot-jxla",
+    "name": "bot-jxla",
+    "status": "running"
+  },
+  {
+    "id": "bot-mdi5",
+    "name": "bot-mdi5",
+    "status": "running"
+  },
+  {
+    "id": "bot-qcij",
+    "name": "bot-qcij",
+    "status": "stopped",
+    "symbols": "BTCUSD,SOLUSD",
+    "config": {
+      "dynamicMode": "on",
+      "atrLength": 2,
+      "buyThresholdATR": 0.05,
+      "sellThresholdATR": 0.05,
+      "priorityCryptos": "BTC,ETH,XRP,BONK,POPCAT",
+      "riskSpreadPerCrypto": 0.33,
+      "reinvestmentCap": 0.2,
+      "confirmTicks": 3,
+      "drawDownBrake": 0.15,
+      "slippage": 0.001
+    }
+  }
+]

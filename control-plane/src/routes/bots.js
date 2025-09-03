@@ -6,34 +6,18 @@ import fs from "fs";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
-/* ---------- resolve repo paths (three levels up from control-plane/src/routes) ---------- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// <repo>/
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
-
-// Correct locations
 const backendDir = path.resolve(repoRoot, "backend");
-const routesDir = path.resolve(repoRoot, "control-plane", "src", "routes");
-
-// New canonical data root
 const dataRoot = path.resolve(backendDir, "data");
-// Legacy (old) location we still migrate from if found
 const legacyDataRoot = path.resolve(backendDir, "default");
-
-// Logs folder (source of seed holdings file)
 const logsRoot = path.resolve(backendDir, "logs");
-
-// Runner we spawn
 const runnerPath = path.resolve(backendDir, "testPrice_Dev.js");
-
-/* ---------- utils ---------- */
 
 async function ensureDir(p) {
   await fsp.mkdir(p, { recursive: true });
 }
-
 async function exists(p) {
   try {
     await fsp.access(p);
@@ -42,7 +26,61 @@ async function exists(p) {
     return false;
   }
 }
-
+function isPidAlive(pid) {
+  if (!pid || typeof pid !== "number") return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function readJSON(p, fallback = null) {
+  try {
+    return JSON.parse(await fsp.readFile(p, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+async function writeJSON(p, obj) {
+  await ensureDir(path.dirname(p));
+  await fsp.writeFile(p, JSON.stringify(obj, null, 2), "utf8");
+}
+async function writeMeta(dir, patch) {
+  const p = path.join(dir, "bot.json");
+  const cur = (await readJSON(p, {})) || {};
+  const m = { ...cur, ...patch };
+  await writeJSON(p, m);
+  return m;
+}
+async function readMeta(dir) {
+  return await readJSON(path.join(dir, "bot.json"), null);
+}
+async function resolveBotDir(id) {
+  const good = path.join(dataRoot, id),
+    legacy = path.join(legacyDataRoot, id);
+  if (await exists(good)) return good;
+  if (await exists(legacy)) {
+    await ensureDir(path.dirname(good));
+    try {
+      await fsp.rename(legacy, good);
+    } catch {
+      await copyDir(legacy, good);
+      await fsp.rm(legacy, { recursive: true, force: true });
+    }
+    return good;
+  }
+  return good;
+}
+async function copyDir(src, dest) {
+  await ensureDir(dest);
+  for (const ent of await fsp.readdir(src, { withFileTypes: true })) {
+    const s = path.join(src, ent.name),
+      d = path.join(dest, ent.name);
+    if (ent.isDirectory()) await copyDir(s, d);
+    else if (ent.isFile()) await fsp.copyFile(s, d);
+  }
+}
 function defaultSummary() {
   return {
     beginningPortfolioValue: null,
@@ -57,88 +95,46 @@ function defaultSummary() {
     dayPL: 0,
   };
 }
-
-async function writeMetaStatus(botDir, status) {
-  try {
-    const metaPath = path.join(botDir, "bot.json");
-    const meta = JSON.parse(await fsp.readFile(metaPath, "utf8"));
-    meta.status = status;
-    await fsp.writeFile(metaPath, JSON.stringify(meta, null, 2));
-  } catch {}
-}
-
-async function readMeta(botDir) {
-  try {
-    return JSON.parse(
-      await fsp.readFile(path.join(botDir, "bot.json"), "utf8")
-    );
-  } catch {
-    return null;
-  }
-}
-
-/** Ensure the correct bot dir exists; if it only exists in legacy path, migrate it. */
-async function resolveBotDir(id) {
-  const good = path.join(dataRoot, id);
-  const legacy = path.join(legacyDataRoot, id);
-
-  if (await exists(good)) return good;
-
-  // migrate from legacy if present
-  if (await exists(legacy)) {
-    await ensureDir(path.dirname(good));
+async function waitForLogGrowth(logPath, ms = 2500) {
+  const start = Date.now();
+  let last = -1;
+  for (;;) {
     try {
-      await fsp.rename(legacy, good);
-    } catch {
-      // Cross-device fallback: copy then remove
-      await copyDir(legacy, good);
-      await fsp.rm(legacy, { recursive: true, force: true });
-    }
-    return good;
-  }
-
-  return good; // return where it should be; caller decides if not found
-}
-
-async function copyDir(src, dest) {
-  await ensureDir(dest);
-  const entries = await fsp.readdir(src, { withFileTypes: true });
-  for (const ent of entries) {
-    const s = path.join(src, ent.name);
-    const d = path.join(dest, ent.name);
-    if (ent.isDirectory()) await copyDir(s, d);
-    else if (ent.isFile()) await fsp.copyFile(s, d);
+      const st = await fsp.stat(logPath);
+      if (last === -1) {
+        if (st.size > 0) return true;
+        last = st.size;
+      } else if (st.size > last) {
+        return true;
+      }
+    } catch {}
+    if (Date.now() - start > ms) return false;
+    await new Promise((r) => setTimeout(r, 150));
   }
 }
-
-/** Parse "Auto-selected strategy: ..." from log if present */
-async function parseStrategyFromLog(logPath) {
-  try {
-    const buf = await fsp.readFile(logPath, "utf8");
-    // search from the end (cheap-ish) for the last occurrence
-    const m = buf.match(/Auto-selected strategy:\s*(.+)$/im);
-    if (m && m[1]) return m[1].trim();
-  } catch {}
-  return null;
+function waitForExitOnce(child, ms = 2000) {
+  // Wait up to 'ms' to see if it exits immediately
+  return new Promise((res) => {
+    let done = false;
+    const t = setTimeout(() => {
+      if (!done) {
+        done = true;
+        res(false);
+      }
+    }, ms);
+    child.once("exit", () => {
+      if (!done) {
+        clearTimeout(t);
+        done = true;
+        res(true);
+      }
+    });
+  });
 }
 
-/* ---------- in-memory process table ---------- */
-const RUN = new Map(); // id -> { proc, status, startedAt }
-
-/* ---------- router ---------- */
+const RUN = new Map(); // id -> { proc, pid, status, startedAt }
 const router = express.Router();
 
-/* Debug: verify paths */
-router.get("/debug/runner-path", async (_req, res) => {
-  res.json({
-    repoRoot,
-    backendDir,
-    runnerPath,
-    exists: fs.existsSync(runnerPath),
-  });
-});
-
-/* List bots: ids are directories under backend/data */
 router.get("/bots", async (_req, res) => {
   try {
     await ensureDir(dataRoot);
@@ -146,14 +142,17 @@ router.get("/bots", async (_req, res) => {
     const items = [];
     for (const ent of dirs) {
       if (!ent.isDirectory()) continue;
-      const id = ent.name;
-      const dir = path.join(dataRoot, id);
-      let status = "stopped";
+      const id = ent.name,
+        dir = path.join(dataRoot, id);
       const meta = await readMeta(dir);
-      if (meta?.status) status = meta.status;
-      const run = RUN.get(id);
-      if (run?.status) status = run.status;
-      items.push({ id, name: id, status });
+      const rec = RUN.get(id);
+      const pid = rec?.pid ?? meta?.pid ?? null;
+      const running = pid && isPidAlive(pid);
+      items.push({
+        id,
+        name: id,
+        status: running ? "running" : rec?.status || meta?.status || "stopped",
+      });
     }
     res.json(items);
   } catch (e) {
@@ -161,101 +160,96 @@ router.get("/bots", async (_req, res) => {
   }
 });
 
-/* Create bot -> ensure /backend/data/<id>/ with seed files */
 router.post("/bots", async (req, res) => {
   const { name, symbols, strategyId, config } = req.body || {};
   if (!name || typeof name !== "string")
     return res.status(400).json({ error: "name required" });
-
-  const id = name;
-  const botDir = path.join(dataRoot, id);
-  await ensureDir(botDir);
+  const id = name,
+    dir = path.join(dataRoot, id);
+  await ensureDir(dir);
   await ensureDir(logsRoot);
-
   const meta = {
     id,
     name,
     symbols: symbols || "",
-    strategyId: strategyId || "", // keep as record; runner reads env instead
+    strategyId: strategyId || "",
     createdAt: new Date().toISOString(),
     status: "stopped",
-    // keep any other config but do not overwrite STRATEGY_NAME if caller already set it
+    pid: null,
+    startedAt: null,
     config: {
       ...(config || {}),
-      // If UI only sent strategyId, also mirror it as STRATEGY_NAME for the runner
       ...(strategyId && !config?.STRATEGY_NAME
-        ? { STRATEGY_NAME: strategyId }
+        ? { STRATEGY_NAME: String(strategyId) }
         : {}),
     },
   };
-
-  await fsp.writeFile(
-    path.join(botDir, "bot.json"),
-    JSON.stringify(meta, null, 2)
-  );
-
-  const sumPath = path.join(botDir, "summary.json");
-  if (!(await exists(sumPath)))
-    await fsp.writeFile(sumPath, JSON.stringify(defaultSummary(), null, 2));
-
-  // Seed holdings: if /backend/data/<id>/cryptoHoldings.json missing, copy from /backend/logs/cryptoHoldings.json
-  const holdingsDest = path.join(botDir, "cryptoHoldings.json");
-  if (!(await exists(holdingsDest))) {
-    const holdingsSrc = path.join(logsRoot, "cryptoHoldings.json");
-    if (await exists(holdingsSrc)) {
-      try {
-        await fsp.copyFile(holdingsSrc, holdingsDest);
-      } catch {}
-    }
+  await writeJSON(path.join(dir, "bot.json"), meta);
+  const sum = path.join(dir, "summary.json");
+  if (!(await exists(sum))) await writeJSON(sum, defaultSummary());
+  const holdDst = path.join(dir, "cryptoHoldings.json"),
+    holdSrc = path.join(logsRoot, "cryptoHoldings.json");
+  if (!(await exists(holdDst)) && (await exists(holdSrc))) {
+    try {
+      await fsp.copyFile(holdSrc, holdDst);
+    } catch {}
   }
-
   res.json({ ok: true, id, status: "stopped" });
 });
 
-/* Summary -> merge live status + file summary and add 'strategy' when we can */
+router.get("/bots/:id/status", async (req, res) => {
+  const { id } = req.params;
+  const dir = await resolveBotDir(id);
+  const meta = await readMeta(dir);
+  const rec = RUN.get(id);
+  const pid = rec?.pid ?? meta?.pid ?? null;
+  const running = pid && isPidAlive(pid);
+  res.json({
+    id,
+    status: running ? "running" : "stopped",
+    pid: running ? pid : null,
+    startedAt: running ? rec?.startedAt ?? meta?.startedAt ?? null : null,
+  });
+});
+
 router.get("/bots/:id/summary", async (req, res) => {
   const { id } = req.params;
-  const botDir = await resolveBotDir(id);
-  const sumPath = path.join(botDir, "summary.json");
-  const logPath = path.join(botDir, "testPrice_output.txt");
-
-  let status = "stopped";
-  try {
-    const j = await readMeta(botDir);
-    if (j?.status) status = j.status;
-    const rec = RUN.get(id);
-    if (rec?.status) status = rec.status;
-  } catch {}
-
+  const dir = await resolveBotDir(id);
+  const sumPath = path.join(dir, "summary.json");
+  const logPath = path.join(dir, "testPrice_output.txt");
+  const meta = await readMeta(dir);
+  const rec = RUN.get(id);
+  const pid = rec?.pid ?? meta?.pid ?? null;
+  const running = pid && isPidAlive(pid);
   let summary = defaultSummary();
   if (await exists(sumPath)) {
     try {
       summary = JSON.parse(await fsp.readFile(sumPath, "utf8"));
     } catch {}
   }
-
-  // Attach 'strategy' if we can infer it
-  let strategy = summary.strategy || null;
-  if (!strategy) {
-    // 1) try last "Auto-selected strategy" from log
-    strategy = await parseStrategyFromLog(logPath);
+  // try to report strategy
+  if (!summary.strategy) {
+    try {
+      const buf = await fsp.readFile(logPath, "utf8").catch(() => "");
+      const m = buf.match(/Auto-selected strategy:\s*(.+)$/im);
+      if (m && m[1]) summary.strategy = m[1].trim();
+    } catch {}
+    if (!summary.strategy && meta?.strategyId)
+      summary.strategy = meta.strategyId;
   }
-  if (!strategy) {
-    // 2) fall back to requested strategyId from meta (UI’s selection)
-    const meta = await readMeta(botDir);
-    if (meta?.strategyId) strategy = meta.strategyId;
-  }
-  summary.strategy = strategy || null;
-
-  res.json({ id, name: id, status, summary });
+  res.json({
+    id,
+    name: id,
+    status: running ? "running" : rec?.status || meta?.status || "stopped",
+    summary,
+  });
 });
 
-/* Logs -> JSON lines; fallback to text route exists for RN caller that wants plain text */
 router.get("/bots/:id/logs", async (req, res) => {
   const { id } = req.params;
   const { limit = 200 } = req.query;
-  const botDir = await resolveBotDir(id);
-  const logPath = path.join(botDir, "testPrice_output.txt");
+  const dir = await resolveBotDir(id);
+  const logPath = path.join(dir, "testPrice_output.txt");
   try {
     const n = Math.max(1, Math.min(2000, Number(limit) || 200));
     const text = await fsp.readFile(logPath, "utf8").catch(() => "");
@@ -269,8 +263,8 @@ router.get("/bots/:id/logs", async (req, res) => {
 router.get("/bots/:id/log", async (req, res) => {
   const { id } = req.params;
   const { tail = 200 } = req.query;
-  const botDir = await resolveBotDir(id);
-  const logPath = path.join(botDir, "testPrice_output.txt");
+  const dir = await resolveBotDir(id);
+  const logPath = path.join(dir, "testPrice_output.txt");
   try {
     const n = Math.max(1, Math.min(2000, Number(tail) || 200));
     const text = await fsp.readFile(logPath, "utf8").catch(() => "");
@@ -284,40 +278,43 @@ router.get("/bots/:id/log", async (req, res) => {
   }
 });
 
-/* Start -> spawn backend/testPrice_Dev.js */
 router.post("/bots/:id/start", async (req, res) => {
   const { id } = req.params;
-  const botDir = await resolveBotDir(id);
-  if (!(await exists(botDir)))
+  const dir = await resolveBotDir(id);
+  if (!(await exists(dir)))
     return res.status(404).json({ error: `bot '${id}' not found` });
 
-  // already running?
-  const prev = RUN.get(id);
-  if (prev?.status === "running" && prev?.proc && !prev.proc.killed) {
-    return res.json({ ok: true, id, status: "running" });
+  const meta = (await readMeta(dir)) || {};
+  const prevPid = meta?.pid;
+  if (prevPid && isPidAlive(prevPid)) {
+    RUN.set(id, {
+      proc: null,
+      pid: prevPid,
+      status: "running",
+      startedAt: meta?.startedAt ?? null,
+    });
+    return res.json({ ok: true, id, status: "running", pid: prevPid });
   }
 
   if (!fs.existsSync(runnerPath)) {
-    return res.status(500).json({
-      error: `Strategy runner not found`,
-      expected: path.relative(repoRoot, runnerPath),
-      tip: "Ensure the file exists at this path relative to repo root.",
-    });
+    return res
+      .status(500)
+      .json({
+        error: "Strategy runner not found",
+        expected: path.relative(repoRoot, runnerPath),
+      });
   }
 
-  const meta = (await readMeta(botDir)) || {};
-  const logPath = path.join(botDir, "testPrice_output.txt");
+  const logPath = path.join(dir, "testPrice_output.txt");
+  const bootErrPath = path.join(dir, "boot.err");
 
-  // Build env; include meta.config (uppercased keys) AND pass STRATEGY_NAME if meta.strategyId exists.
   const env = {
     ...process.env,
     BOT_ID: id,
-    DATA_DIR: botDir,
-    HOLDINGS_FILE: path.join(botDir, "cryptoHoldings.json"),
+    DATA_DIR: dir,
+    HOLDINGS_FILE: path.join(dir, "cryptoHoldings.json"),
     LOG_FILE: "testPrice_output.txt",
     LOG_PATH: logPath,
-
-    // Prefer explicit config first…
     ...(meta?.config && typeof meta.config === "object"
       ? Object.fromEntries(
           Object.entries(meta.config).map(([k, v]) => [
@@ -326,48 +323,92 @@ router.post("/bots/:id/start", async (req, res) => {
           ])
         )
       : {}),
-
-    // …but if only 'strategyId' was stored, expose it as STRATEGY_NAME too
     ...(meta?.strategyId && !meta?.config?.STRATEGY_NAME
       ? { STRATEGY_NAME: String(meta.strategyId) }
       : {}),
   };
 
   try {
+    const errFd = fs.openSync(bootErrPath, "a");
     const child = spawn(process.execPath, [runnerPath], {
-      cwd: backendDir, // run inside /backend
+      cwd: backendDir,
       env,
-      stdio: ["ignore", "ignore", "ignore"], // script writes its own log file
+      stdio: ["ignore", "ignore", errFd], // stderr -> boot.err
       detached: false,
     });
+    const pid = child.pid;
+    const startedAt = Date.now();
 
-    RUN.set(id, { proc: child, status: "running", startedAt: Date.now() });
-    await writeMetaStatus(botDir, "running");
+    RUN.set(id, { proc: child, pid, status: "running", startedAt });
+    await writeMeta(dir, { status: "running", pid, startedAt });
 
-    child.on("exit", async (_code, _sig) => {
-      RUN.set(id, { proc: null, status: "stopped", startedAt: null });
-      await writeMetaStatus(botDir, "stopped").catch(() => {});
+    // detect instant failure and confirm log started
+    const [exitedQuickly, logStarted] = await Promise.all([
+      waitForExitOnce(child, 2000), // wait 2s for early crash
+      waitForLogGrowth(logPath, 3000),
+    ]);
+
+    if (exitedQuickly && !logStarted) {
+      let hint = "";
+      try {
+        hint = fs
+          .readFileSync(bootErrPath, "utf8")
+          .split(/\r?\n/)
+          .slice(-30)
+          .join("\n");
+      } catch {}
+      RUN.set(id, {
+        proc: null,
+        pid: null,
+        status: "stopped",
+        startedAt: null,
+      });
+      await writeMeta(dir, { status: "stopped", pid: null, startedAt: null });
+      return res
+        .status(500)
+        .json({ error: "Runner exited immediately", pid, hint });
+    }
+
+    child.on("exit", async () => {
+      RUN.set(id, {
+        proc: null,
+        pid: null,
+        status: "stopped",
+        startedAt: null,
+      });
+      await writeMeta(dir, {
+        status: "stopped",
+        pid: null,
+        startedAt: null,
+      }).catch(() => {});
     });
 
-    res.json({ ok: true, id, status: "running" });
+    return res.json({ ok: true, id, status: "running", pid });
   } catch (err) {
-    try {
-      RUN.set(id, { proc: null, status: "stopped", startedAt: null });
-      await writeMetaStatus(botDir, "stopped").catch(() => {});
-    } catch {}
+    RUN.set(id, { proc: null, pid: null, status: "stopped", startedAt: null });
+    await writeMeta(dir, {
+      status: "stopped",
+      pid: null,
+      startedAt: null,
+    }).catch(() => {});
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });
 
-/* Stop -> send SIGINT, fall back to SIGKILL after timeout */
 router.post("/bots/:id/stop", async (req, res) => {
   const { id } = req.params;
   const rec = RUN.get(id);
-  const botDir = await resolveBotDir(id);
+  const dir = await resolveBotDir(id);
+  const meta = await readMeta(dir);
+  const pid = rec?.pid ?? meta?.pid ?? null;
 
-  if (!rec?.proc || rec.proc.killed) {
-    RUN.set(id, { proc: null, status: "stopped", startedAt: null });
-    await writeMetaStatus(botDir, "stopped").catch(() => {});
+  if (!pid || !isPidAlive(pid) || !rec?.proc) {
+    RUN.set(id, { proc: null, pid: null, status: "stopped", startedAt: null });
+    await writeMeta(dir, {
+      status: "stopped",
+      pid: null,
+      startedAt: null,
+    }).catch(() => {});
     return res.json({ ok: true, id, status: "stopped" });
   }
 
@@ -378,14 +419,15 @@ router.post("/bots/:id/stop", async (req, res) => {
     try {
       !rec.proc.killed && rec.proc.kill("SIGKILL");
     } catch {}
-  }, 5000);
+  }, 6000);
 
-  RUN.set(id, { proc: null, status: "stopped", startedAt: null });
-  await writeMetaStatus(botDir, "stopped").catch(() => {});
+  RUN.set(id, { proc: null, pid: null, status: "stopped", startedAt: null });
+  await writeMeta(dir, { status: "stopped", pid: null, startedAt: null }).catch(
+    () => {}
+  );
   res.json({ ok: true, id, status: "stopped" });
 });
 
-/* Delete -> stop if running then remove folder */
 router.post("/bots/:id/delete", async (req, res) => {
   const { id } = req.params;
   const rec = RUN.get(id);
@@ -395,9 +437,8 @@ router.post("/bots/:id/delete", async (req, res) => {
     } catch {}
   }
   RUN.delete(id);
-  const botDir = await resolveBotDir(id);
-  if (await exists(botDir))
-    await fsp.rm(botDir, { recursive: true, force: true });
+  const dir = await resolveBotDir(id);
+  if (await exists(dir)) await fsp.rm(dir, { recursive: true, force: true });
   res.json({ ok: true, id });
 });
 
