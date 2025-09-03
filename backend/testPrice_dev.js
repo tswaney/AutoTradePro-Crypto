@@ -898,14 +898,17 @@ function enableHotkeys(shutdownFn) {
   try {
     process.stdin.removeAllListeners("keypress");
   } catch {}
+  // NEW: ensure Node emits keypress events
   readline.emitKeypressEvents(process.stdin);
   try {
     process.stdin.setEncoding("utf8");
   } catch {}
+  // NEW: raw mode so Ctrl+<key> reaches us
   if (process.stdin.setRawMode && !process.stdin.isRaw)
     process.stdin.setRawMode(true);
   process.stdin.resume();
 
+  // NEW: handle Ctrl+S / Ctrl+G / Ctrl+E / Ctrl+C
   process.stdin.on("keypress", (_str, key) => {
     if (!key) return;
     const { ctrl, name } = key;

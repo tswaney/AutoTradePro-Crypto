@@ -1,4 +1,3 @@
-// mobile/src/screens/BotsScreen.tsx
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -11,8 +10,8 @@ import { listBots, getBotSummary, type BotSummary } from "../api";
 
 type BotListItem = { id: string; name?: string; status?: string };
 
-// Visible tag so we can prove this screen is mounted
-const BUILD_TAG = "BotsScreen v4";
+// Visible tag to verify the deployed screen version
+const BUILD_TAG = "BotsScreen v7 (strategy + metrics)";
 
 export default function BotsScreen({ navigation }: any) {
   const [bots, setBots] = useState<BotListItem[]>([]);
@@ -38,7 +37,7 @@ export default function BotsScreen({ navigation }: any) {
     };
   }, []);
 
-  // Poll summaries every 3s whenever the list changes
+  // Poll summaries every 3s
   useEffect(() => {
     let alive = true;
     const pull = async () => {
@@ -57,7 +56,6 @@ export default function BotsScreen({ navigation }: any) {
       const map: Record<string, BotSummary> = {};
       for (const [id, s] of pairs) if (s) map[id] = s;
       setSummaries((prev) => ({ ...prev, ...map }));
-      console.info("[BotsScreen] summaries:", map);
     };
     pull();
     const t = setInterval(pull, 3000);
@@ -79,15 +77,6 @@ export default function BotsScreen({ navigation }: any) {
 
   const openBot = (bot: BotListItem) =>
     navigation?.navigate?.("BotDetail", { id: bot.id, name: bot.name || bot.id });
-
-  const currency = (n?: number | null) => {
-    if (n == null) return "—";
-    try {
-      return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
-    } catch {
-      return `$${Number(n || 0).toFixed(2)}`;
-    }
-  };
 
   return (
     <View style={{ flex: 1, backgroundColor: "#0b0c10" }}>
@@ -194,6 +183,15 @@ function Metric({
   );
 }
 
+function currency(n?: number | null) {
+  if (n == null) return "—";
+  try {
+    return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
+  } catch {
+    return `$${Number(n || 0).toFixed(2)}`;
+  }
+}
+
 function BotCard({
   bot,
   summary,
@@ -220,16 +218,16 @@ function BotCard({
     };
   }, [bot.id]);
 
-  const currency = (n?: number | null) => {
-    if (n == null) return "—";
-    try {
-      return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
-    } catch {
-      return `$${Number(n || 0).toFixed(2)}`;
-    }
-  };
-
-  const pl24hAvg = summary?.pl24hAvg ?? summary?.pl24h ?? summary?.dayPL ?? null;
+  // Map runner summary fields → card
+  const strategy = (summary as any)?.strategy || "—"; // descriptive name
+  const ratePerHr =
+    (summary as any)?.pl24hAvgRatePerHour ?? null; // 24h P/L (avg) Rate Per Hr
+  const overallRate =
+    (summary as any)?.overall24hAvgRatePerHour ?? null; // Overall 24h P/L (avg) Rate Per Hr
+  const totalPL = (summary as any)?.totalPL ?? null;
+  const locked = (summary as any)?.locked ?? null;
+  const currentValue = (summary as any)?.currentValue ?? null;
+  const cryptoMkt = (summary as any)?.cryptoMkt ?? null;
 
   return (
     <TouchableOpacity
@@ -242,13 +240,13 @@ function BotCard({
         marginVertical: 6,
       }}
     >
-      {/* top row */}
+      {/* Top row: Bot name + status */}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: 8,
+          marginBottom: 4,
         }}
       >
         <Text style={{ color: "white", fontSize: 18, fontWeight: "800" }}>
@@ -257,7 +255,35 @@ function BotCard({
         <StatusPill status={bot.status} />
       </View>
 
-      {/* metrics row */}
+      {/* NEW: Descriptive strategy line */}
+      <Text
+        style={{ color: "#c5c6c7", fontSize: 12, marginBottom: 10 }}
+        numberOfLines={1}
+      >
+        {strategy}
+      </Text>
+
+      {/* Metrics row #1 */}
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          backgroundColor: "#0e1116",
+          borderRadius: 10,
+          paddingVertical: 10,
+          paddingHorizontal: 12,
+          marginBottom: 8,
+        }}
+      >
+        <Metric
+          label="24h P/L (avg) / hr"
+          value={ratePerHr == null ? "—" : currency(ratePerHr)}
+        />
+        <Metric label="Current Value" value={currency(currentValue)} />
+        <Metric label="Total P/L" value={currency(totalPL)} align="right" />
+      </View>
+
+      {/* Metrics row #2 */}
       <View
         style={{
           flexDirection: "row",
@@ -268,9 +294,12 @@ function BotCard({
           paddingHorizontal: 12,
         }}
       >
-        <Metric label="24h P/L (avg)" value={pl24hAvg == null ? "—" : currency(pl24hAvg)} />
-        <Metric label="Current Value" value={summary ? currency(summary.currentValue) : "—"} />
-        <Metric label="Total P/L" value={summary ? currency(summary.totalPL) : "—"} align="right" />
+        <Metric
+          label="Overall avg / hr"
+          value={overallRate == null ? "—" : currency(overallRate)}
+        />
+        <Metric label="Locked" value={currency(locked)} />
+        <Metric label="Crypto (mkt)" value={currency(cryptoMkt)} align="right" />
       </View>
     </TouchableOpacity>
   );
