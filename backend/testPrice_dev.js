@@ -13,9 +13,9 @@
    • Atomic writes: holdings/state/baseline/summary/pnl-24h/prices via .tmp+rename.
    • Hotkeys: works even if stdin isn’t a TTY (opens /dev/tty on POSIX), raw mode +
      readline; XON/XOFF disabled; also keeps signal & file-trigger fallbacks.
-   • Ctrl+S detailed status + Ctrl+G grid dump restored (old-style rich output).
-
-   Existing strategy interfaces and comments are preserved as much as possible.
+   • Ctrl+S detailed status + Ctrl+G grid dump + Ctrl+E legend
+   • Ctrl+C prints a “Total Portfolio Summary” before exiting.
+   • NEW (this patch): Prevent net-negative SELLs after slippage/fees + lock profits.
    ===================================================================================== */
 
 const fs = require("fs");
@@ -38,7 +38,7 @@ function safeWrite(file, data) {
   fs.renameSync(tmp, file);
 }
 
-/* --- pretty printing helpers (for Ctrl+S/Ctrl+G output) --- */
+/* --- pretty printing helpers (for Ctrl+S/Ctrl+G/Ctrl+C output) --- */
 const fmtUsd = (n) => (Number.isFinite(n) ? `$${Number(n).toFixed(2)}` : "-");
 const fmtNum = (n, d = 6) => (Number.isFinite(n) ? Number(n).toFixed(d) : "-");
 const pad = (s, w, side = "right") => {
@@ -117,6 +117,12 @@ const BASELINE_HEAL_RATIO = Math.max(
   1,
   parseFloat(process.env.BASELINE_HEAL_RATIO || "4.0")
 ); // default 4x
+
+// --- NEW: Minimum net-profit buffer on SELLs (beyond slippage+fees) ---
+const MIN_PROFIT_BUFFER_PCT = parseFloat(
+  process.env.MIN_PROFIT_BUFFER_PCT || "0.5"
+); // 0.5%
+const MIN_PROFIT_BUFFER_FRAC = Math.max(0, MIN_PROFIT_BUFFER_PCT / 100);
 
 const config = {
   aiEnabled: asBool(process.env.AI_ENABLED),
@@ -424,6 +430,8 @@ function loadState() {
         portfolio.cashReserve = round2(Number(j.cashReserve));
       if (Number.isFinite(j.lockedCash))
         portfolio.lockedCash = round2(Number(j.lockedCash));
+      if (Number.isFinite(j.dailyProfitTotal))
+        portfolio.dailyProfitTotal = round2(Number(j.dailyProfitTotal));
       console.log(
         `✅ Loaded state from ${STATE_FILE} (cash=${portfolio.cashReserve}, locked=${portfolio.lockedCash})`
       );
@@ -440,6 +448,7 @@ function saveState() {
         {
           cashReserve: round2(portfolio.cashReserve),
           lockedCash: round2(portfolio.lockedCash),
+          dailyProfitTotal: round2(portfolio.dailyProfitTotal || 0),
           ts: Date.now(),
         },
         null,
@@ -697,11 +706,16 @@ function writeSummaryJSON() {
       0,
       now - (portfolio.startTime?.getTime?.() || now)
     );
-    const overallRate = beginning
-      ? round2(
-          (snap.currentValue - beginning) / Math.max(durationMs / 3600000, 0.01)
-        )
-      : 0;
+    const durationHours = durationMs / 3600000;
+
+    let overallRate = 0;
+    if (beginning && durationHours >= 6) {
+      // Only compute after 6h of runtime
+      overallRate = round2((snap.currentValue - beginning) / durationHours);
+    } else {
+      // Too little runtime — avoid inflated numbers
+      overallRate = 0; // or set to null/"N/A" if you prefer
+    }
 
     const out = {
       beginningPortfolioValue: beginning || null,
@@ -718,13 +732,17 @@ function writeSummaryJSON() {
       overall24hAvgRatePerHour: overallRate,
       totalPL,
       cash: snap.cash,
-      cryptoMkt: round2(snap.cryptoMktFresh + snap.cryptoMktCached), // IMPORTANT: include cached
+      cryptoMkt: round2(snap.cryptoMktFresh + snap.cryptoMktCached), // include cached
       locked: snap.locked,
       currentValue: snap.currentValue,
       dayPL: pl24h,
       staleCryptoMkt: snap.cryptoMktStale,
       coverage: snap.coverage,
       priceFreshnessMs: PRICE_FRESHNESS_MS,
+
+      // NEW: expose to app
+      dailyProfitTotal: round2(portfolio.dailyProfitTotal || 0),
+      lockedCash: round2(portfolio.lockedCash || 0),
     };
 
     safeWrite(SUMMARY_PATH, JSON.stringify(out, null, 2));
@@ -924,6 +942,77 @@ function printGrid() {
   }
 }
 
+// Exit-time Total Portfolio Summary (for Ctrl+C and shutdown)
+function printExitSummary() {
+  try {
+    const snap = snapshotNow({ useCacheForStale: true });
+
+    // try to use the latest summary numbers we already write for the app
+    let last = null;
+    try {
+      last = JSON.parse(fs.readFileSync(SUMMARY_PATH, "utf8"));
+    } catch {}
+
+    const beginning = Number(
+      portfolio.beginningPortfolioValue || last?.beginningPortfolioValue || 0
+    );
+    const durationMs = Math.max(
+      0,
+      Date.now() - (portfolio.startTime?.getTime?.() || Date.now())
+    );
+    const durationMin = Math.floor(durationMs / 60000);
+
+    const totalPL = beginning ? round2(snap.currentValue - beginning) : 0;
+    const pl24h = Number.isFinite(last?.pl24h) ? last.pl24h : 0;
+    const pl24hRate = Number.isFinite(last?.pl24hAvgRatePerHour)
+      ? last.pl24hAvgRatePerHour
+      : 0;
+    const pl24hEst = Number.isFinite(last?.pl24hEstimatedProfit)
+      ? last.pl24hEstimatedProfit
+      : round2(pl24hRate * 24);
+    const overallRate = Number.isFinite(last?.overall24hAvgRatePerHour)
+      ? last.overall24hAvgRatePerHour
+      : beginning
+      ? round2(
+          (snap.currentValue - beginning) / Math.max(durationMs / 3600000, 0.01)
+        )
+      : 0;
+
+    console.log(
+      "\n================  Total Portfolio Summary  ================"
+    );
+    console.log(pad("Beginning Portfolio Value", 28), fmtUsd(beginning));
+    console.log(pad("Duration (min)", 28), durationMin);
+    console.log(
+      pad("Buys", 28),
+      Number(last?.buys ?? portfolio.buysToday ?? 0)
+    );
+    console.log(
+      pad("Sells", 28),
+      Number(last?.sells ?? portfolio.sellsToday ?? 0)
+    );
+    console.log(pad("24h P/L (avg) Rate Per Hr", 28), fmtUsd(pl24hRate));
+    console.log(pad("24h Estimated Profit", 28), fmtUsd(pl24hEst));
+    console.log(
+      pad("Overall 24h P/L (avg) Rate Per Hr", 28),
+      fmtUsd(overallRate)
+    );
+    console.log(pad("Total P/L", 28), fmtUsd(totalPL));
+    console.log(pad("Cash", 28), fmtUsd(snap.cash));
+    console.log(
+      pad("Crypto (mkt)", 28),
+      fmtUsd(round2(snap.cryptoMktFresh + snap.cryptoMktCached))
+    );
+    console.log(pad("Locked", 28), fmtUsd(snap.locked));
+    console.log(pad("Current Portfolio Value", 28), fmtUsd(snap.currentValue));
+    console.log(
+      "===========================================================\n"
+    );
+  } catch (e) {
+    console.log(`[exit-summary] error: ${e?.message || e}`);
+  }
+}
+
 function enableHotkeys(onShutdown) {
   // POSIX: disable flow control so Ctrl+S isn’t swallowed
   if (process.platform !== "win32") {
@@ -943,7 +1032,11 @@ function enableHotkeys(onShutdown) {
     "ctrl-s": printStatus,
     "ctrl-g": printGrid,
     "ctrl-e": printLegend,
-    "ctrl-c": () => onShutdown && onShutdown(),
+    // ensure file-triggered stop prints the summary, too
+    "ctrl-c": () => {
+      printExitSummary();
+      onShutdown && onShutdown();
+    },
   };
   setInterval(() => {
     for (const f of Object.keys(triggers)) {
@@ -1004,15 +1097,23 @@ function enableHotkeys(onShutdown) {
     for (let i = 0; i < buf.length; i++) {
       const code = buf[i];
       if (code === 3) {
-        hit("c", () => onShutdown && onShutdown());
+        // Ctrl-C
+        hit("c", () => {
+          printExitSummary();
+          onShutdown && onShutdown();
+        });
         continue;
-      } // Ctrl-C
+      }
       if (code >= 1 && code <= 26) {
         const k = ctrlMap[code];
         if (k === "s") hit("s", printStatus);
         else if (k === "g") hit("g", printGrid);
         else if (k === "e") hit("e", printLegend);
-        else if (k === "c") hit("c", () => onShutdown && onShutdown());
+        else if (k === "c")
+          hit("c", () => {
+            printExitSummary();
+            onShutdown && onShutdown();
+          });
       }
     }
   });
@@ -1022,7 +1123,10 @@ function enableHotkeys(onShutdown) {
     readline.emitKeypressEvents(input);
     input.on("keypress", (_str, key) => {
       if (!key || !key.ctrl) return;
-      if (key.name === "c") return onShutdown && onShutdown();
+      if (key.name === "c") {
+        printExitSummary();
+        return onShutdown && onShutdown();
+      }
       if (key.name === "s") return printStatus();
       if (key.name === "g") return printGrid();
       if (key.name === "e") return printLegend();
@@ -1099,6 +1203,8 @@ async function runStrategyForSymbol(symbol) {
         costBasis: holding.costBasis,
         strategyState: strat,
         config,
+        portfolio,
+        strat, // some strategies accept this param
       });
       action = decision?.action ? String(decision.action).toUpperCase() : null;
     }
@@ -1164,35 +1270,46 @@ async function runStrategyForSymbol(symbol) {
       return;
     }
 
+    // Use the *true entry* (first lot) as the cost basis for realized P&L calc
     const lot0 = (strategies[symbol].grid || [])[0] || {
       price: holding.costBasis,
       amount: holding.amount,
     };
     const entryPrice = Number(lot0.price || holding.costBasis || 0);
 
+    // Net-profit guard: price must exceed entry by (slippage + fees + buffer)
     const slippageFrac =
       Number(strategies[symbol]?.slippage || config.defaultSlippage) || 0;
-    const estProfit = estimatedSellProfit({
-      price: info.price,
-      entryPrice,
-      qty,
-      slippageFrac,
-    });
-    if (!(estProfit > 0)) {
+    const requiredGainFrac = slippageFrac + FEES_FRAC + MIN_PROFIT_BUFFER_FRAC; // e.g. 2% + 0.2% + 0.5% = 2.7%
+    const minOkPrice = entryPrice * (1 + requiredGainFrac);
+    if (!(info.price >= minOkPrice)) {
+      const shortfall = ((minOkPrice - info.price) / entryPrice) * 100;
       console.log(
-        `⚠️  SELL skipped for ${symbol}: non-positive profit (est $${estProfit.toFixed(
-          2
-        )}) (price=${info.price.toFixed(
-          config.priceDecimalPlaces
-        )}, entry=${entryPrice.toFixed(
-          config.priceDecimalPlaces
-        )}, qty=${qty.toFixed(6)})`
+        `⚠️  SELL skipped for ${symbol}: below net-profit floor (need ≥ ${(
+          requiredGainFrac * 100
+        ).toFixed(2)}% above entry, short ${shortfall.toFixed(2)}%)`
       );
       return;
     }
 
-    const proceeds = round2(info.price * qty * (1 - slippageFrac));
-    portfolio.cashReserve = round2(portfolio.cashReserve + proceeds);
+    // Compute realized profit BEFORE mutating state
+    const grossProceeds = info.price * qty;
+    const proceedsAfterSlip = grossProceeds * (1 - slippageFrac);
+    const proceedsAfterFees = proceedsAfterSlip * (1 - FEES_FRAC);
+    const realizedProfit = proceedsAfterFees - entryPrice * qty;
+
+    // Extra guard
+    if (!(realizedProfit > 0)) {
+      console.log(
+        `⚠️  SELL skipped for ${symbol}: non-positive profit (est $${realizedProfit.toFixed(
+          2
+        )})`
+      );
+      return;
+    }
+
+    // Apply state changes
+    portfolio.cashReserve = round2(portfolio.cashReserve + proceedsAfterFees);
     holding.amount = round2(holding.amount - qty);
     portfolio.sellsToday++;
 
@@ -1203,13 +1320,36 @@ async function runStrategyForSymbol(symbol) {
       if (st.grid[0].amount === 0) st.grid.shift();
     }
 
+    // Track realized P&L for profit lock
+    portfolio.dailyProfitTotal = round2(
+      (portfolio.dailyProfitTotal || 0) + realizedProfit
+    );
+
     console.log(
       `🔴 SELL ${symbol}: qty=${qty.toFixed(6)} @ $${info.price.toFixed(
         config.priceDecimalPlaces
-      )}  cash=$${portfolio.cashReserve.toFixed(2)}  src=${info.source}`
+      )}  cash=$${portfolio.cashReserve.toFixed(
+        2
+      )}  realized=$${realizedProfit.toFixed(2)}  src=${info.source}`
     );
+
     saveHoldings();
     saveState();
+
+    // Optional: call strategy-level profit lock logic if provided
+    try {
+      if (
+        typeof selectedStrategy?.shouldLockProfit === "function" &&
+        typeof selectedStrategy?.lockProfit === "function"
+      ) {
+        if (selectedStrategy.shouldLockProfit(portfolio, config)) {
+          selectedStrategy.lockProfit(portfolio, config);
+          saveState(); // persist lockedCash after lock
+        }
+      }
+    } catch (e) {
+      console.warn(`[${symbol}] profit lock check failed: ${e?.message || e}`);
+    }
     return;
   }
 
@@ -1366,6 +1506,10 @@ async function tickOnce() {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(interval);
+
+    // Print the exit summary for terminal users
+    printExitSummary();
+
     try {
       writeSummaryJSON();
       await writeSummary(DATA_DIR);
